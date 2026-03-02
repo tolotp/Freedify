@@ -3778,66 +3778,82 @@ document.addEventListener('click', (e) => {
 });
 
 // ========== MEDIA SESSION API (Lock Screen Controls) ==========
-let mediaSessionHandlersRegistered = false;
 
 function updateMediaSession(track) {
     if (!('mediaSession' in navigator)) return;
     
+    const artworkSrc = track.album_art || '/static/icon.svg';
     navigator.mediaSession.metadata = new MediaMetadata({
         title: track.name || 'Unknown Track',
         artist: track.artists || 'Unknown Artist',
         album: track.album || '',
         artwork: [
-            { src: track.album_art || '/static/icon.svg', sizes: '512x512', type: 'image/png' }
+            { src: artworkSrc, sizes: '96x96', type: 'image/png' },
+            { src: artworkSrc, sizes: '128x128', type: 'image/png' },
+            { src: artworkSrc, sizes: '192x192', type: 'image/png' },
+            { src: artworkSrc, sizes: '256x256', type: 'image/png' },
+            { src: artworkSrc, sizes: '384x384', type: 'image/png' },
+            { src: artworkSrc, sizes: '512x512', type: 'image/png' }
         ]
     });
+    navigator.mediaSession.playbackState = 'playing';
+    console.log('MediaSession metadata set for:', track.name);
+}
 
-    // Ensure action handlers are registered (Android sometimes ignores them if set before metadata exists)
-    if (!mediaSessionHandlersRegistered) {
-        const actionHandlers = [
-            ['play', () => {
-                if (audioContext?.state === 'suspended') {
-                    audioContext.resume().then(() => getActivePlayer().play().catch(() => {}));
-                } else {
-                    getActivePlayer().play().catch(() => {});
-                }
-            }],
-            ['pause', () => getActivePlayer().pause()],
-            ['previoustrack', () => playPrevious()],
-            ['nexttrack', () => playNext()],
-            ['seekbackward', (details) => {
-                const player = getActivePlayer();
-                player.currentTime = Math.max(player.currentTime - (details.seekOffset || 10), 0);
-            }],
-            ['seekforward', (details) => {
-                const player = getActivePlayer();
-                player.currentTime = Math.min(player.currentTime - (details.seekOffset || -10), player.duration);
-            }],
-            ['seekto', (details) => {
-                const player = getActivePlayer();
-                if (details.fastSeek && 'fastSeek' in player) {
-                    player.fastSeek(details.seekTime);
-                } else {
-                    player.currentTime = details.seekTime;
-                }
-            }],
-            ['stop', () => {
-                getActivePlayer().pause();
-                getActivePlayer().currentTime = 0;
-                state.isPlaying = false;
-                updatePlayButton();
-                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
-            }]
-        ];
-
-        for (const [action, handler] of actionHandlers) {
-            try {
-                navigator.mediaSession.setActionHandler(action, handler);
-            } catch (error) {
-                console.log(`MediaSession action '${action}' is not supported on this browser.`);
+// Register action handlers at page load — they persist across playbacks (per web.dev spec)
+if ('mediaSession' in navigator) {
+    const actionHandlers = [
+        ['play', async () => {
+            console.log('MediaSession: play action triggered');
+            if (audioContext?.state === 'suspended') {
+                await audioContext.resume();
             }
+            await getActivePlayer().play().catch(e => console.warn('MediaSession play failed:', e));
+        }],
+        ['pause', () => {
+            console.log('MediaSession: pause action triggered');
+            getActivePlayer().pause();
+        }],
+        ['previoustrack', () => {
+            console.log('MediaSession: previoustrack action triggered');
+            playPrevious();
+        }],
+        ['nexttrack', () => {
+            console.log('MediaSession: nexttrack action triggered');
+            playNext();
+        }],
+        ['seekbackward', (details) => {
+            const player = getActivePlayer();
+            player.currentTime = Math.max(player.currentTime - (details.seekOffset || 10), 0);
+        }],
+        ['seekforward', (details) => {
+            const player = getActivePlayer();
+            player.currentTime = Math.min(player.currentTime + (details.seekOffset || 10), player.duration);
+        }],
+        ['seekto', (details) => {
+            const player = getActivePlayer();
+            if (details.fastSeek && 'fastSeek' in player) {
+                player.fastSeek(details.seekTime);
+            } else {
+                player.currentTime = details.seekTime;
+            }
+        }],
+        ['stop', () => {
+            getActivePlayer().pause();
+            getActivePlayer().currentTime = 0;
+            state.isPlaying = false;
+            updatePlayButton();
+            navigator.mediaSession.playbackState = 'none';
+        }]
+    ];
+
+    for (const [action, handler] of actionHandlers) {
+        try {
+            navigator.mediaSession.setActionHandler(action, handler);
+            console.log(`MediaSession: registered '${action}' handler`);
+        } catch (error) {
+            console.log(`MediaSession: '${action}' not supported`);
         }
-        mediaSessionHandlersRegistered = true;
     }
 }
 
