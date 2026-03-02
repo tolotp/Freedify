@@ -1186,13 +1186,24 @@ async def lastfm_callback_page():
     <script>
         const params = new URLSearchParams(window.location.search);
         const token = params.get('token');
-        if (token && window.opener) {
-            window.opener.postMessage({type: 'lastfm-auth', token: token}, '*');
-            setTimeout(() => window.close(), 1500);
-        } else if (token) {
-            // Fallback: store token and redirect
+        if (token) {
+            // Store token for the main window to pick up
             localStorage.setItem('lastfm_pending_token', token);
-            window.location.href = '/';
+            
+            // Try postMessage to opener
+            if (window.opener) {
+                window.opener.postMessage({type: 'lastfm-auth', token: token}, '*');
+            }
+            
+            // Try BroadcastChannel (works even without window.opener)
+            try {
+                const bc = new BroadcastChannel('freedify_lastfm');
+                bc.postMessage({type: 'lastfm-auth', token: token});
+                bc.close();
+            } catch(e) {}
+            
+            // Always close — never redirect to /
+            setTimeout(() => window.close(), 1500);
         }
     </script>
     </body></html>

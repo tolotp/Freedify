@@ -10,6 +10,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.1] - 2026-03-02
+
+### Fixed
+- **Android Background Playback**: Resolved multiple issues causing playback pauses and queue stalls when the browser is backgrounded or screen is locked on Android.
+- **Lock Screen Controls**: Fully implemented MediaSession API to enable OS-level next, previous, play, and pause buttons on the Android lock screen and notification panel.
+- **Headphone Controls**: Fixed an issue where unpausing via headphone buttons failed on mobile, and enabled headphone track skipping.
+- **Background Stream Recovery**: Added automatic stream reconnection and queue progression if the network momentarily drops while the app is in the background.
+
+---
+
 ## [1.3.0] - 2026-03-01
 
 ### Added

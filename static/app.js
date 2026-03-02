@@ -2432,6 +2432,7 @@ function playPrevious() {
 function handlePlay() {
     state.isPlaying = true;
     updatePlayButton();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     const track = state.queue[state.currentIndex];
     if (track) submitNowPlaying(track);
 }
@@ -2441,6 +2442,7 @@ function handlePause(e) {
     if (e.target === getActivePlayer()) {
         state.isPlaying = false;
         updatePlayButton();
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     }
 }
 
@@ -2457,10 +2459,16 @@ function handleProgress() {
 
 // Unified ended handler — handles repeat, transition guards, and queue advancement
 function handleEnded(e) {
-    // Skip if gapless transition already handled this
-    if (crossfadeTimeout || transitionInProgress) {
-        console.log('handleEnded: Skipping playNext (transition guard active)');
+    // Skip if gapless transition is actively in progress
+    if (transitionInProgress) {
+        console.log('handleEnded: Skipping playNext (transition in progress)');
         return;
+    }
+    // Clear stale crossfade guard — timer may have been frozen by Android background throttling
+    if (crossfadeTimeout) {
+        clearTimeout(crossfadeTimeout);
+        crossfadeTimeout = null;
+        console.log('handleEnded: Cleared stale crossfadeTimeout (was frozen in background)');
     }
     // Only respond if the active player fired this event
     if (e.target !== getActivePlayer()) return;
@@ -3512,6 +3520,14 @@ function initEqualizer() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
+        // Auto-resume AudioContext when Android suspends it in background
+        audioContext.onstatechange = () => {
+            if (audioContext.state === 'suspended' && state.isPlaying) {
+                console.log('AudioContext suspended while playing — auto-resuming');
+                audioContext.resume();
+            }
+        };
+        
         // Create source nodes for both audio players
         sourceNode = audioContext.createMediaElementSource(audioPlayer);
         sourceNode2 = audioContext.createMediaElementSource(audioPlayer2);
@@ -3778,7 +3794,12 @@ function updateMediaSession(track) {
 // Set up Media Session action handlers
 if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('play', () => {
-        getActivePlayer().play();
+        // Resume AudioContext first (critical for headphone unpause on Android)
+        if (audioContext?.state === 'suspended') {
+            audioContext.resume().then(() => getActivePlayer().play().catch(() => {}));
+        } else {
+            getActivePlayer().play().catch(() => {});
+        }
     });
     
     navigator.mediaSession.setActionHandler('pause', () => {
@@ -3811,20 +3832,69 @@ if ('mediaSession' in navigator) {
             player.currentTime = details.seekTime;
         }
     });
+    
+    // Stop handler — reset playback state
+    try {
+        navigator.mediaSession.setActionHandler('stop', () => {
+            getActivePlayer().pause();
+            getActivePlayer().currentTime = 0;
+            state.isPlaying = false;
+            updatePlayButton();
+            navigator.mediaSession.playbackState = 'none';
+        });
+    } catch(e) { /* stop not supported on all browsers */ }
 }
 
-// Update position state periodically
-audioPlayer.addEventListener('timeupdate', () => {
+// Update position state for lock screen on BOTH players
+function updateMediaSessionPosition() {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
         try {
-            if (audioPlayer.duration && !isNaN(audioPlayer.duration)) {
+            const player = getActivePlayer();
+            if (player.duration && !isNaN(player.duration) && player.duration > 0) {
                 navigator.mediaSession.setPositionState({
-                    duration: audioPlayer.duration,
-                    playbackRate: audioPlayer.playbackRate,
-                    position: audioPlayer.currentTime
+                    duration: player.duration,
+                    playbackRate: player.playbackRate,
+                    position: Math.min(player.currentTime, player.duration)
                 });
             }
         } catch (e) { /* Ignore errors */ }
+    }
+}
+audioPlayer.addEventListener('timeupdate', updateMediaSessionPosition);
+audioPlayer2.addEventListener('timeupdate', updateMediaSessionPosition);
+
+// ========== ANDROID BACKGROUND PLAYBACK RESILIENCE ==========
+
+// Resume AudioContext and clear stale guards when page becomes visible
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Resume main AudioContext if suspended while playing
+        if (audioContext?.state === 'suspended' && state.isPlaying) {
+            console.log('Visibility restored — resuming AudioContext');
+            audioContext.resume();
+        }
+        // Clear stale crossfade guard that may have been frozen
+        if (crossfadeTimeout) {
+            clearTimeout(crossfadeTimeout);
+            crossfadeTimeout = null;
+        }
+        // If we should be playing but audio is paused, try to resume
+        const player = getActivePlayer();
+        if (state.isPlaying && player.paused && player.readyState >= 2) {
+            console.log('Visibility restored — resuming paused playback');
+            player.play().catch(() => {});
+        }
+    }
+});
+
+// Recover from network drops in background
+window.addEventListener('online', () => {
+    const player = getActivePlayer();
+    if (state.isPlaying && (player.paused || player.readyState < 3)) {
+        console.log('Network restored — attempting stream recovery');
+        const pos = player.currentTime;
+        player.currentTime = pos; // Force reconnect by seeking to current position
+        player.play().catch(() => {});
     }
 });
 
@@ -5424,6 +5494,25 @@ fetch('/api/listenbrainz/validate')
     window.addEventListener('message', (event) => {
         if (event.data?.type === 'lastfm-auth' && event.data.token) {
             exchangeLastFMToken(event.data.token);
+        }
+    });
+    
+    // Listen for BroadcastChannel (fallback when window.opener is null)
+    try {
+        const bc = new BroadcastChannel('freedify_lastfm');
+        bc.onmessage = (event) => {
+            if (event.data?.type === 'lastfm-auth' && event.data.token) {
+                exchangeLastFMToken(event.data.token);
+            }
+        };
+    } catch(e) {}
+    
+    // Check for pending token when window regains focus (fallback if both channels fail)
+    window.addEventListener('focus', () => {
+        const pt = localStorage.getItem('lastfm_pending_token');
+        if (pt) {
+            localStorage.removeItem('lastfm_pending_token');
+            exchangeLastFMToken(pt);
         }
     });
     
