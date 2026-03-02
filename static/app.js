@@ -3778,6 +3778,8 @@ document.addEventListener('click', (e) => {
 });
 
 // ========== MEDIA SESSION API (Lock Screen Controls) ==========
+let mediaSessionHandlersRegistered = false;
+
 function updateMediaSession(track) {
     if (!('mediaSession' in navigator)) return;
     
@@ -3789,52 +3791,53 @@ function updateMediaSession(track) {
             { src: track.album_art || '/static/icon.svg', sizes: '512x512', type: 'image/png' }
         ]
     });
-}
 
-// Set up Media Session action handlers securely
-if ('mediaSession' in navigator) {
-    const actionHandlers = [
-        ['play', () => {
-            if (audioContext?.state === 'suspended') {
-                audioContext.resume().then(() => getActivePlayer().play().catch(() => {}));
-            } else {
-                getActivePlayer().play().catch(() => {});
-            }
-        }],
-        ['pause', () => getActivePlayer().pause()],
-        ['previoustrack', () => playPrevious()],
-        ['nexttrack', () => playNext()],
-        ['seekbackward', (details) => {
-            const player = getActivePlayer();
-            player.currentTime = Math.max(player.currentTime - (details.seekOffset || 10), 0);
-        }],
-        ['seekforward', (details) => {
-            const player = getActivePlayer();
-            player.currentTime = Math.min(player.currentTime + (details.seekOffset || 10), player.duration);
-        }],
-        ['seekto', (details) => {
-            const player = getActivePlayer();
-            if (details.fastSeek && 'fastSeek' in player) {
-                player.fastSeek(details.seekTime);
-            } else {
-                player.currentTime = details.seekTime;
-            }
-        }],
-        ['stop', () => {
-            getActivePlayer().pause();
-            getActivePlayer().currentTime = 0;
-            state.isPlaying = false;
-            updatePlayButton();
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
-        }]
-    ];
+    // Ensure action handlers are registered (Android sometimes ignores them if set before metadata exists)
+    if (!mediaSessionHandlersRegistered) {
+        const actionHandlers = [
+            ['play', () => {
+                if (audioContext?.state === 'suspended') {
+                    audioContext.resume().then(() => getActivePlayer().play().catch(() => {}));
+                } else {
+                    getActivePlayer().play().catch(() => {});
+                }
+            }],
+            ['pause', () => getActivePlayer().pause()],
+            ['previoustrack', () => playPrevious()],
+            ['nexttrack', () => playNext()],
+            ['seekbackward', (details) => {
+                const player = getActivePlayer();
+                player.currentTime = Math.max(player.currentTime - (details.seekOffset || 10), 0);
+            }],
+            ['seekforward', (details) => {
+                const player = getActivePlayer();
+                player.currentTime = Math.min(player.currentTime - (details.seekOffset || -10), player.duration);
+            }],
+            ['seekto', (details) => {
+                const player = getActivePlayer();
+                if (details.fastSeek && 'fastSeek' in player) {
+                    player.fastSeek(details.seekTime);
+                } else {
+                    player.currentTime = details.seekTime;
+                }
+            }],
+            ['stop', () => {
+                getActivePlayer().pause();
+                getActivePlayer().currentTime = 0;
+                state.isPlaying = false;
+                updatePlayButton();
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+            }]
+        ];
 
-    for (const [action, handler] of actionHandlers) {
-        try {
-            navigator.mediaSession.setActionHandler(action, handler);
-        } catch (error) {
-            console.log(`MediaSession action '${action}' is not supported on this browser.`);
+        for (const [action, handler] of actionHandlers) {
+            try {
+                navigator.mediaSession.setActionHandler(action, handler);
+            } catch (error) {
+                console.log(`MediaSession action '${action}' is not supported on this browser.`);
+            }
         }
+        mediaSessionHandlersRegistered = true;
     }
 }
 
