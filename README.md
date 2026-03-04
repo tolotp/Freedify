@@ -305,21 +305,26 @@ Open http://localhost:8000
 
 Freedify can run directly on Android using [Termux](https://termux.dev/):
 
+1. Install [Termux](https://termux.dev/) from F-Droid
+2. Install system dependencies:
 ```bash
-# Install dependencies
-pkg install python ffmpeg
+pkg update && pkg upgrade
+pkg install python ffmpeg git rust binutils-is-llvm libuv python-cryptography python-grpcio
+```
+3. Install Python dependencies:
+```bash
+pip install pydantic_core
+```
+4. Clone and run:
+```bash
+git clone https://github.com/BioHapHazard/Freedify
+cd Freedify
 pip install -r app/requirements.txt
-
-# Run the server
+nano .env # (Optional) add your API keys here
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+*(Tip: On Termux, the cache defaults to `~/.freedify_cache` to avoid permission errors. To update in the future, just run `git pull --rebase --autostash` inside the folder)*
 
-> **Note:** The cache directory defaults to `~/.freedify_cache`. If you need a custom location, set `CACHE_DIR`:
-> ```bash
-> CACHE_DIR=~/my_cache python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-> ```
-
----
 
 ## 🐳 Self-Hosting with Docker (Recommended for NAS/Local Servers)
 
