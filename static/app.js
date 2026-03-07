@@ -37,9 +37,23 @@ const state = {
     podcastPlayedEpisodes: JSON.parse(localStorage.getItem('freedify_podcast_played') || '{}'), // {episodeId: true}
     podcastResumePositions: JSON.parse(localStorage.getItem('freedify_podcast_resume') || '{}'), // {episodeId: seconds}
     podcastHistory: JSON.parse(localStorage.getItem('freedify_podcast_history') || '[]'), // Recently played episodes
+    audiobookHistory: JSON.parse(localStorage.getItem('freedify_audiobook_history') || '[]'), // Recently played audiobook chapters
     podcastTags: JSON.parse(localStorage.getItem('freedify_podcast_tags') || '{}'), // {podcastId: ['tag1','tag2']}
     lastSavedPositionTime: 0 // In-memory tracker for resume saves
 };
+
+// One-time migration: move audiobook entries from podcastHistory to audiobookHistory
+(function migrateAudiobookHistory() {
+    const audiobooks = state.podcastHistory.filter(e => e.source === 'audiobook');
+    if (audiobooks.length > 0) {
+        // Move audiobook entries to audiobookHistory (avoid duplicates)
+        const existingIds = new Set(state.audiobookHistory.map(e => e.id));
+        audiobooks.forEach(e => { if (!existingIds.has(e.id)) state.audiobookHistory.push(e); });
+        state.podcastHistory = state.podcastHistory.filter(e => e.source !== 'audiobook');
+        localStorage.setItem('freedify_podcast_history', JSON.stringify(state.podcastHistory));
+        localStorage.setItem('freedify_audiobook_history', JSON.stringify(state.audiobookHistory));
+    }
+})();
 
 // ========== iOS AUDIO KEEPALIVE ==========
 // iOS Safari aggressively suspends web audio on screen lock.
@@ -409,7 +423,12 @@ allTypeBtns.forEach(btn => {
         }
         
         const query = searchInput.value.trim();
-        if (query) performSearch(query);
+        if (query) {
+            performSearch(query);
+        } else {
+            // Show Jump Back In dashboard when switching to music search types
+            showEmptyState();
+        }
     });
 });
 
@@ -818,6 +837,33 @@ function addToPodcastHistory(episode) {
     savePodcastHistory();
 }
 
+// ========== AUDIOBOOK HISTORY ==========
+function saveAudiobookHistory() {
+    localStorage.setItem('freedify_audiobook_history', JSON.stringify(state.audiobookHistory));
+}
+
+function addToAudiobookHistory(episode) {
+    if (!episode || !episode.id) return;
+    // Remove existing entry if present
+    state.audiobookHistory = state.audiobookHistory.filter(e => e.id !== episode.id);
+    state.audiobookHistory.unshift({
+        id: episode.id,
+        name: episode.name,
+        artists: episode.artists || '',
+        album_art: episode.album_art || '/static/icon.svg',
+        duration: episode.duration || '0:00',
+        url: episode.url || '',
+        src: episode.src || '',
+        is_local: episode.is_local || false,
+        track_number: episode.track_number || '',
+        playedAt: Date.now(),
+        source: episode.source || 'audiobook'
+    });
+    // Keep last 50
+    if (state.audiobookHistory.length > 50) state.audiobookHistory = state.audiobookHistory.slice(0, 50);
+    saveAudiobookHistory();
+}
+
 // ========== PODCAST TAGS ==========
 function savePodcastTags() {
     localStorage.setItem('freedify_podcast_tags', JSON.stringify(state.podcastTags));
@@ -1159,6 +1205,57 @@ function renderMyBooksView() {
     
     html += `</div>`;
     resultsContainer.innerHTML = html;
+
+    // Render recently played audiobook chapters
+    if (state.audiobookHistory.length > 0) {
+        const historySection = document.createElement('div');
+        historySection.style.marginTop = '32px';
+        historySection.innerHTML = `
+            <h3 style="margin-bottom: 12px; color: var(--text-primary);">🕐 Recently Played Chapters</h3>
+            <div class="results-list" id="audiobook-history-list">
+                ${state.audiobookHistory.slice(0, 10).map(ep => {
+                    const resumePos = getEpisodePosition(ep.id);
+                    const resumeText = resumePos > 0 ? ` • Resume at ${formatTime(resumePos)}` : '';
+                    return `
+                        <div class="track-item" data-id="${ep.id}" style="cursor: pointer;">
+                            <img class="track-album-art" src="${ep.album_art || '/static/icon.svg'}" alt="Art" loading="lazy">
+                            <div class="track-info">
+                                <p class="track-name">${escapeHtml(ep.name)}</p>
+                                <p class="track-artist">${escapeHtml(ep.artists)}${resumeText}</p>
+                            </div>
+                            <div class="track-actions">
+                                <span class="track-duration">${ep.duration || ''}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+        resultsContainer.appendChild(historySection);
+
+        // Click handlers for audiobook history items
+        historySection.querySelectorAll('.track-item').forEach(el => {
+            el.addEventListener('click', () => {
+                const epId = el.dataset.id;
+                let episode = state.audiobookHistory.find(ep => ep.id === epId);
+                if (episode) {
+                    // If history entry has no stream URL, try to resolve from cached tracks
+                    if (!episode.src && !episode.url) {
+                        for (const book of state.audiobookFavorites) {
+                            if (book.cachedTracks) {
+                                const cached = book.cachedTracks.find(t => t.id === epId);
+                                if (cached) {
+                                    episode = { ...episode, ...cached };
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    playTrack(episode);
+                }
+            });
+        });
+    }
     
     // Click handlers
     const grid = document.getElementById('my-books-grid');
@@ -2770,7 +2867,7 @@ function playTrack(track) {
     
     // Podcast / Audiobook: add to history and check for resume position
     if (track.source === 'podcast' || track.source === 'audiobook') {
-        addToPodcastHistory(track);
+        if (track.source === 'audiobook') { addToAudiobookHistory(track); } else { addToPodcastHistory(track); }
         const savedPos = getEpisodePosition(track.id);
         if (savedPos > 10) {
             // Show a toast with resume option
@@ -3063,7 +3160,7 @@ async function loadTrack(track) {
                 track._resumeAt = savedPos;
             }
         }
-        addToPodcastHistory(track);
+        if (track.source === 'audiobook') { addToAudiobookHistory(track); } else { addToPodcastHistory(track); }
     }
     
     // Reset preload and transition state on direct track load
@@ -5070,6 +5167,7 @@ async function uploadToDrive(syncType = 'all') {
             syncData.podcastPlayedEpisodes = state.podcastPlayedEpisodes;
             syncData.podcastResumePositions = state.podcastResumePositions;
             syncData.podcastHistory = state.podcastHistory;
+            syncData.audiobookHistory = state.audiobookHistory;
             syncData.podcastTags = state.podcastTags;
         }
         
@@ -5201,6 +5299,10 @@ async function downloadFromDrive(syncType = 'all') {
                 if (syncData.podcastHistory) {
                     state.podcastHistory = syncData.podcastHistory;
                     savePodcastHistory();
+                }
+                if (syncData.audiobookHistory) {
+                    state.audiobookHistory = syncData.audiobookHistory;
+                    saveAudiobookHistory();
                 }
                 if (syncData.podcastTags) {
                     state.podcastTags = syncData.podcastTags;

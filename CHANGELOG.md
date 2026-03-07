@@ -10,6 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.4] - 2026-03-07
+
+### Fixed
+- **Audiobook History Playback**: Recently played audiobook chapters now play from Premiumize cache instead of falling back to YouTube. Stream URLs are stored in history entries with a fallback resolver for older entries.
+- **Search Type Navigation**: Clicking Song, Artist, or Album search tabs now shows the Jump Back In dashboard when the search bar is empty, instead of staying stuck on the Podcasts/Audiobooks view.
+- **Audiobook History Separation**: Audiobook chapters no longer appear in the Podcast "Recently Played" section. Added a separate `audiobookHistory` with automatic migration of existing entries.
+
+### Added
+- **Recently Played Chapters**: New section on the My Books page showing last 10 played audiobook chapters with resume position indicators.
+- **Docker Chromium Support**: Dockerfile now installs Chromium and chromedriver for AudiobookBay's Selenium-based Cloudflare bypass.
+- **`PREMIUMIZE_API_KEY`**: Added to `docker-compose.yml` and README environment variable docs for audiobook streaming.
+
+### Improved
+- **Docker Build**: Suppressed pip root user warning with `PIP_ROOT_USER_ACTION=ignore`.
+- **Selenium Fallback**: AudiobookBay scraper uses system Chromium in Docker, falls back to webdriver-manager for local development.
+- **Google Drive Sync**: Audiobook history now syncs alongside podcast history and other data.
+
+---
+
 ## [1.3.3] - 2026-03-07
 
 ### Added

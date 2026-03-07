@@ -1,10 +1,17 @@
 FROM python:3.11-slim
 
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install FFmpeg and Chromium (required for Selenium/Cloudflare bypass)
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    chromium \
+    chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
+
+# Suppress pip root warning (safe in Docker containers)
+ENV PIP_ROOT_USER_ACTION=ignore
 
 # Copy requirements and install
 COPY app/requirements.txt ./app/
