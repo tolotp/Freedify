@@ -8843,24 +8843,44 @@ function processDirectAudioFiles(audioFiles, details) {
     
     const mappedTracks = audioFiles.map((file, index) => {
         const streamUrl = file.stream_link || file.directlink || file.link;
-        const stableId = 'abb_' + details.id + '_' + index;
+        const stableId = `ab_${details.title}_${file.name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+        
         return {
             id: stableId,
+            isrc: `LINK:${btoa(streamUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`,
             name: file.name.replace(/\.[^/.]+$/, ""),
             artists: details.author || 'Unknown Author',
+            album: details.title,
             album_art: details.cover_image || '/static/icon.svg',
-            duration: file.size ? formatBytes(file.size) : 'Unknown',
-            url: streamUrl,
-            src: streamUrl,
-            is_local: false,
-            track_number: index + 1,
+            duration: '0:00',
             source: 'audiobook',
-            file_id: file.id
+            track_number: index + 1
         };
     });
     
-    updateAudiobookFavorites(details, mappedTracks);
-    showDetailView(details.id, 'album');
+    const albumData = {
+        id: `ab_${details.id}_direct`,
+        name: details.title,
+        artists: details.author || 'Audiobook',
+        image: details.cover_image || '/static/icon.svg',
+        is_playlist: false
+    };
+    
+    // Auto-save to My Books and cache the tracks
+    addAudiobookFavorite(details);
+    const favIdx = state.audiobookFavorites.findIndex(b => 
+        b.name === details.title || b.id === details.id
+    );
+    if (favIdx !== -1) {
+        state.audiobookFavorites[favIdx].cachedTracks = mappedTracks;
+        state.audiobookFavorites[favIdx].cachedAt = Date.now();
+        if (details.description) {
+            state.audiobookFavorites[favIdx].description = details.description;
+        }
+        saveAudiobookFavorites();
+    }
+    
+    showDetailView(albumData, mappedTracks);
 }
 
 async function startAudiobookDownload(magnetLink) {
