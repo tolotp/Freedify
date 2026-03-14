@@ -102,3 +102,49 @@ async def search_my_files(query: str):
     """Search Premiumize cloud for existing downloads to skip torrenting."""
     response = await _make_request("/folder/search", params={"q": query})
     return response.get("content", [])
+
+async def refresh_link_by_filename(filename: str) -> str | None:
+    """Search Premiumize cloud for a file by name and return a fresh CDN link.
+    
+    Used to auto-recover when a cached Premiumize CDN download URL expires (403).
+    Returns the new direct download URL, or None if not found.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Strip URL encoding and extension variants for a broader search
+        from urllib.parse import unquote
+        clean_name = unquote(filename)
+        # Use the base name without extension for the search query
+        search_term = clean_name.rsplit('.', 1)[0] if '.' in clean_name else clean_name
+        
+        logger.info(f"Premiumize link refresh: searching for '{search_term}'")
+        results = await search_my_files(search_term)
+        
+        if not results:
+            logger.warning(f"Premiumize link refresh: no results for '{search_term}'")
+            return None
+        
+        # Find the best match by filename
+        for item in results:
+            item_name = item.get("name", "")
+            if item_name.lower() == clean_name.lower() or clean_name.lower() in item_name.lower():
+                fresh_link = item.get("link") or item.get("stream_link")
+                if fresh_link:
+                    logger.info(f"Premiumize link refresh: got fresh link for '{item_name}'")
+                    return fresh_link
+        
+        # If no exact match, just use the first result that has a link
+        for item in results:
+            fresh_link = item.get("link") or item.get("stream_link")
+            if fresh_link:
+                logger.info(f"Premiumize link refresh: using best-match '{item.get('name')}'")
+                return fresh_link
+        
+        logger.warning(f"Premiumize link refresh: results found but none had a download link")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Premiumize link refresh error: {e}")
+        return None

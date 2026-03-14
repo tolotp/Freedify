@@ -454,37 +454,16 @@ class AudioService:
             return None
     
     async def update_tidal_apis(self):
-        """Update available Tidal APIs from status server."""
-        try:
-            # Only update once per session to avoid delay
-            if hasattr(self, '_apis_updated') and self._apis_updated:
-                return
-
-            logger.info("Updating Tidal API list...")
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                async with client.stream("GET", "https://status.monochrome.tf/api/stream") as response:
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data = json.loads(line[6:])
-                            
-                            api_instances = [
-                                inst for inst in data.get('instances', [])
-                                if inst.get('instance_type') == 'api' and inst.get('last_check', {}).get('success')
-                            ]
-                            
-                            # Sort by avg_response_time
-                            api_instances.sort(key=lambda x: x.get('avg_response_time', 9999))
-                            
-                            new_apis = [api['url'] for api in api_instances if api.get('url')]
-                            
-                            if new_apis:
-                                global TIDAL_APIS
-                                TIDAL_APIS = new_apis
-                                self._apis_updated = True
-                                logger.info(f"Updated Tidal API list with {len(new_apis)} servers")
-                            break # Found data, done
-        except Exception as e:
-            logger.warning(f"Failed to update Tidal APIs: {e}")
+        """Update available Tidal APIs from status server.
+        
+        NOTE: The status.monochrome.tf domain is no longer resolving (DNS dead).
+        This function is now a no-op. The hardcoded TIDAL_APIS list at the top of
+        this file is the authoritative source. Update that list manually when
+        proxies change.
+        """
+        if hasattr(self, '_apis_updated') and self._apis_updated:
+            return
+        self._apis_updated = True
 
     def embed_metadata(self, audio_data: bytes, format: str, metadata: Dict) -> bytes:
         """Embed metadata into audio file (MP3/FLAC/ALAC/WAV)."""

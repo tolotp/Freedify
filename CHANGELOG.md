@@ -17,9 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Render Keep-Alive**: Added an automatic background ping task to the FastAPI lifespan that pings the application's `RENDER_EXTERNAL_URL` every 13 minutes, preventing free-tier servers from spinning down due to inactivity.
 - **Spotify Embed Scraping Fallback**: When the Spotify API returns a 403 Forbidden error for public playlists or albums, Freedify now seamlessly falls back to scraping track data directly from Spotify's embed pages.
 - **Deezer Album Art Enrichment**: Songs imported via the Spotify embed fallback now use concurrent Deezer searches to automatically fetch and attach the correct high-quality album artwork for each individual track instead of reusing the playlist cover.
+- **Premiumize CDN Auto-Refresh**: When a cached Premiumize audiobook/file CDN link expires (403 Forbidden), the server now automatically searches Premiumize cloud for the file by name, fetches a fresh download link, and retries the stream — completely transparent to the user.
 
 ### Fixed
 - **Spotify Token Retrieval Dead Code**: Removed unreachable auth code in the Spotify integration service that prevented fallback token acquisition strategies.
+- **Tidal 401 Token Expiry**: Tidal auth tokens are now automatically refreshed when they expire (401 Unauthorized), fixing playback failures on long-running Render deployments.
+- **Spotify Audio Features 403 Spam**: Added a circuit breaker for the deprecated Spotify `/audio-features` endpoint — after the first 403, all subsequent DJ Mode calls skip the API entirely and fall back to AI estimation.
+- **Dead Tidal API Discovery**: Removed the broken `status.monochrome.tf` API discovery call that logged errors on every startup.
 
 ---
 

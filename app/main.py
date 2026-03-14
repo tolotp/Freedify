@@ -652,6 +652,30 @@ async def stream_audio(
                 req = client.build_request("GET", target_stream_url, headers=req_headers)
                 r = await client.send(req, stream=True)
                 
+                # Auto-refresh expired Premiumize CDN links
+                if r.status_code == 403 and "energycdn.com" in target_stream_url:
+                    await r.aclose()
+                    await client.aclose()
+                    
+                    # Extract filename from the expired URL path
+                    from urllib.parse import urlparse, unquote
+                    expired_path = urlparse(target_stream_url).path
+                    filename = unquote(expired_path.split("/")[-1])
+                    logger.info(f"Premiumize CDN link expired (403). Refreshing link for: {filename}")
+                    
+                    from app.premiumize_service import refresh_link_by_filename
+                    fresh_url = await refresh_link_by_filename(filename)
+                    
+                    if fresh_url:
+                        logger.info(f"Got fresh Premiumize link, retrying stream...")
+                        target_stream_url = fresh_url
+                        client = httpx.AsyncClient(follow_redirects=True, timeout=stream_timeout)
+                        req = client.build_request("GET", target_stream_url, headers=req_headers)
+                        r = await client.send(req, stream=True)
+                    else:
+                        logger.warning(f"Could not refresh Premiumize link for: {filename}")
+                        raise HTTPException(status_code=403, detail="Premiumize CDN link expired and could not be refreshed. Try re-adding the file from your cloud.")
+                
                 # Prepare headers
                 resp_headers = {
                     "Accept-Ranges": "bytes",
