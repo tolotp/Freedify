@@ -944,7 +944,9 @@ class SpotifyService:
                 last_seen_count = 0
                 
                 def extract_visible_tracks():
-                    for row in driver.find_elements(By.CSS_SELECTOR, SELECTOR):
+                    # No need for nonlocal seen_tracks since we're modifying the dict
+                    current_rows = driver.find_elements(By.CSS_SELECTOR, SELECTOR)
+                    for row in current_rows:
                         try:
                             text = row.text.strip()
                             parts = [p.strip() for p in text.split('\n') if p.strip()]
@@ -956,14 +958,14 @@ class SpotifyService:
                             # Skip the track number
                             parts = parts[1:]
                             
-                            # Skip "E" (Explicit) marker
+                            # Skip "E" (Explicit) marker if it appears directly after the number
                             if parts and parts[0] == "E":
                                 parts = parts[1:]
                             
                             if len(parts) >= 2:
                                 track_name = parts[0].strip()
                                 artist = parts[1].strip()
-                                # Sometimes "E" appears as second element
+                                # Sometimes "E" appears as second element (after track name)
                                 if artist == "E" and len(parts) >= 3:
                                     artist = parts[2].strip()
                                 
@@ -981,23 +983,36 @@ class SpotifyService:
                 extract_visible_tracks()
                 logger.info(f"Browser scrape: initial extraction found {len(seen_tracks)} tracks")
                 
-                # Scroll to load all tracks
-                while stale_count < 20:
+                # Scroll to load all tracks. Stop when we reach 10 consecutive stale scrolls
+                stale_limit = 10
+                while stale_count < stale_limit:
                     rows = driver.find_elements(By.CSS_SELECTOR, SELECTOR)
                     if rows:
                         # Scroll the last row into view
                         driver.execute_script("arguments[0].scrollIntoView({block: 'end'});", rows[-1])
-                    time.sleep(0.3)
+                    
+                    # Wait for network/DOM to catch up
+                    time.sleep(1.0)
                     
                     extract_visible_tracks()
                     
                     if len(seen_tracks) == last_seen_count:
                         stale_count += 1
+                        if stale_count % 3 == 0:
+                            # Try scrolling up a bit and back down if stuck
+                            driver.execute_script("window.scrollBy(0, -300);")
+                            time.sleep(0.5)
+                            if rows:
+                                driver.execute_script("arguments[0].scrollIntoView({block: 'end'});", rows[-1])
+                                time.sleep(0.5)
                     else:
                         stale_count = 0
+                        
+                        # Only log occasionally so we don't spam Render logs
+                        if len(seen_tracks) - last_seen_count >= 50 or last_seen_count == 0:
+                            logger.info(f"Browser scrape progress: {len(seen_tracks)} tracks loaded so far...")
+                            
                         last_seen_count = len(seen_tracks)
-                        if last_seen_count % 50 == 0:
-                            logger.info(f"Browser scrape: {last_seen_count} tracks loaded so far...")
                 
                 logger.info(f"Browser scrape: finished with {len(seen_tracks)} tracks")
                 return list(seen_tracks.values())
