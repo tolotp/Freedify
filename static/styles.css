@@ -7264,3 +7264,24 @@ body {
         justify-content: center;
     }
 }
+
+/* ==================== Mobile Track Item Layout (Podcasts/Audiobooks) ==================== */
+@media (max-width: 768px) {
+    .track-item {
+        flex-wrap: wrap;
+    }
+    .track-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .track-name {
+        white-space: normal;
+        word-break: break-word;
+    }
+    .track-actions {
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 8px;
+    }
+}

@@ -10,6 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.9] - 2026-03-22
+
+### Changed
+- Improved mobile layout for podcast and audiobook tracks to prevent title truncation.
+- Implemented double-layered track layout on mobile (title wraps and actions move to second row).
+
 ## [1.3.8] - 2026-03-18
 
 ### Added
