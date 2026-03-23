@@ -3,7 +3,18 @@
  * Enhanced search with albums, artists, playlists, and Spotify URL support
  */
 
-console.log('🔥 FREEDIFY APP.JS VERSION: 2026-01-21-STRICT-MODE-V2 🔥');
+// ========== HELPERS ==========
+function safeLoad(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) || fallback; }
+    catch { return fallback; }
+}
+
+function enforceArrayCap(arr, max) {
+    while (arr.length > max) arr.pop();
+}
+
+const MAX_LIBRARY_SIZE = 2000;
+const MAX_HISTORY_SIZE = 200;
 
 // ========== STATE ==========
 const state = {
@@ -21,7 +32,7 @@ const state = {
     volume: parseFloat(localStorage.getItem('freedify_volume')) || 1,
     muted: false,
     crossfadeDuration: 1, // seconds (when crossfade is enabled)
-    playlists: JSON.parse(localStorage.getItem('freedify_playlists') || '[]'), // User playlists
+    playlists: safeLoad('freedify_playlists', []),
     scrobbledCurrent: false, // Track if current song was scrobbled
     listenBrainzConfig: { valid: false, username: null }, // LB status
     hiResMode: localStorage.getItem('freedify_hires') !== 'false', // Hi-Res 24-bit mode (Default True)
@@ -29,18 +40,18 @@ const state = {
     sortOrder: 'newest', // 'newest' or 'oldest' for album sorting
     lastSearchResults: [], // Store last search results for re-rendering
     lastSearchType: 'track', // Store last search type
-    history: JSON.parse(localStorage.getItem('freedify_history') || '[]'), // Listening history (last 50)
-    library: JSON.parse(localStorage.getItem('freedify_library') || '[]'), // Saved/starred tracks
+    history: safeLoad('freedify_history', []),
+    library: safeLoad('freedify_library', []),
     playbackSpeed: 1.0, // Default playback speed for podcasts
-    podcastFavorites: JSON.parse(localStorage.getItem('freedify_podcasts') || '[]'), // Favorited podcasts
-    audiobookFavorites: JSON.parse(localStorage.getItem('freedify_audiobooks') || '[]'), // Favorited books
-    podcastPlayedEpisodes: JSON.parse(localStorage.getItem('freedify_podcast_played') || '{}'), // {episodeId: true}
-    podcastResumePositions: JSON.parse(localStorage.getItem('freedify_podcast_resume') || '{}'), // {episodeId: seconds}
-    podcastHistory: JSON.parse(localStorage.getItem('freedify_podcast_history') || '[]'), // Recently played episodes
-    audiobookHistory: JSON.parse(localStorage.getItem('freedify_audiobook_history') || '[]'), // Recently played audiobook chapters
-    podcastTags: JSON.parse(localStorage.getItem('freedify_podcast_tags') || '{}'), // {podcastId: ['tag1','tag2']}
+    podcastFavorites: safeLoad('freedify_podcasts', []),
+    audiobookFavorites: safeLoad('freedify_audiobooks', []),
+    podcastPlayedEpisodes: safeLoad('freedify_podcast_played', {}),
+    podcastResumePositions: safeLoad('freedify_podcast_resume', {}),
+    podcastHistory: safeLoad('freedify_podcast_history', []),
+    audiobookHistory: safeLoad('freedify_audiobook_history', []),
+    podcastTags: safeLoad('freedify_podcast_tags', {}),
     lastSavedPositionTime: 0, // In-memory tracker for resume saves
-    watchedPlaylists: JSON.parse(localStorage.getItem('freedify_watched') || '[]') // Watched Spotify playlists
+    watchedPlaylists: safeLoad('freedify_watched', [])
 };
 
 // One-time migration: move audiobook entries from podcastHistory to audiobookHistory
@@ -91,7 +102,6 @@ function startIOSAudioKeepAlive() {
         oscillator.start();
         
         iosKeepAliveStarted = true;
-        console.log('iOS audio keepalive started');
         
         // Resume context on visibility change (iOS sometimes suspends it)
         document.addEventListener('visibilitychange', () => {
@@ -100,7 +110,6 @@ function startIOSAudioKeepAlive() {
             }
         });
     } catch (e) {
-        console.log('iOS audio keepalive not available:', e.message);
     }
 }
 
@@ -110,7 +119,6 @@ document.addEventListener('touchstart', () => startIOSAudioKeepAlive(), { once: 
 
 // ========== DOM ELEMENTS ==========
 // App.js v0106L - Robust Proxy Cleanup
-console.log("Freedify v0106L Loaded - Robust Proxy Cleanup");
 
 // Helper for multiple selectors (Fix for ReferenceError: $$ is not defined)
 const $ = (selector) => document.querySelector(selector);
@@ -119,7 +127,6 @@ const $$ = (selector) => document.querySelectorAll(selector);
 // Global Image Error Handler - Fallback to placeholder for broken album art
 document.addEventListener('error', (e) => {
     if (e.target.tagName === 'IMG' && e.target.src && !e.target.src.includes('placeholder.svg') && !e.target.dataset.errorHandled) {
-        console.log('Image failed to load, using placeholder:', e.target.src);
         e.target.dataset.errorHandled = 'true';  // Prevent infinite retry
         e.target.src = '/static/placeholder.svg';
     }
@@ -161,7 +168,6 @@ document.addEventListener('click', (e) => {
     
     // Check if this track is already preloaded - use it instantly!
     if (preloadedTrackId === clickedTrack.id && preloadedReady && preloadedPlayer) {
-        console.log('Using preloaded track (detail click):', clickedTrack.name);
         preloadedTrackId = null;
         preloadedReady = false;
         updatePlayerUI();
@@ -709,6 +715,7 @@ function addToLibrary(track) {
     };
     
     state.library.unshift(libraryEntry);
+    enforceArrayCap(state.library, MAX_LIBRARY_SIZE);
     saveLibrary();
     showToast(`★ Added "${track.name}" to Library`);
     return true;
@@ -767,6 +774,7 @@ function addAllToLibrary(tracks) {
     });
     
     if (addedCount > 0) {
+        enforceArrayCap(state.library, MAX_LIBRARY_SIZE);
         saveLibrary();
         showToast(`★ Added ${addedCount} of ${tracks.length} tracks to Library`);
     } else {
@@ -1977,7 +1985,6 @@ function renderResults(results, type, append = false) {
         // Wire up card clicks (need to go through wrapper)
         grid.querySelectorAll('.podcast-search-card-wrapper .album-card').forEach(el => {
             el.addEventListener('click', () => {
-                console.log('Podcast card clicked, ID:', el.dataset.id);
                 openPodcastEpisodes(el.dataset.id);
             });
         });
@@ -2017,7 +2024,6 @@ function renderResults(results, type, append = false) {
             el.addEventListener('click', (e) => {
                 const trackId = String(el.dataset.id); 
                 const track = results.find(t => String(t.id) === trackId);
-                console.log('Track card clicked, ID:', trackId, 'Found:', track?.name);
                 if (track) {
                     playTrack(track); 
                     showToast(`Playing "${track.name}"`);
@@ -2046,10 +2052,8 @@ function renderResults(results, type, append = false) {
             el.addEventListener('click', () => {
                 const id = el.dataset.id;
                 if (type === 'audiobook') {
-                    console.log('Audiobook card clicked, ID:', id);
                     openAudiobook(id);
                 } else {
-                    console.log('Album card clicked, ID:', id);
                     openAlbum(id);
                 }
             });
@@ -2521,12 +2525,10 @@ async function openAlbum(albumId) {
         if (!response.ok) throw new Error(album.detail);
         
         hideLoading();
-        console.log('Opening album modal for:', album.name, album);
         
         // Store album info in state for batch downloads
         state.detailName = album.name || '';
         state.detailArtist = album.artists || '';
-        console.log('✅ Stored in state - name:', state.detailName, 'artist:', state.detailArtist);
         
         showAlbumModal(album);
     } catch (error) {
@@ -2544,7 +2546,6 @@ async function openPodcastEpisodes(podcastId) {
         if (!response.ok) throw new Error(podcast.detail);
         
         hideLoading();
-        console.log('Opening podcast episodes:', podcast.name, podcast);
         
         // Use detail view for podcasts (allows clicking episodes for info modal)
         showDetailView(podcast, podcast.tracks || []);
@@ -3208,7 +3209,6 @@ function playTrack(track) {
     
     // Check if this track is already preloaded and ready - use it directly!
     if (preloadedTrackId === track.id && preloadedReady && preloadedPlayer) {
-        console.log('Using preloaded track:', track.name);
         
         // Reset preload state
         preloadedTrackId = null;
@@ -3286,7 +3286,6 @@ function extractDominantColor(imageUrl) {
             }
         } catch (e) {
             // Canvas tainted or other error - silently ignore
-            console.log('Could not extract color from album art');
         }
     };
     
@@ -3430,7 +3429,6 @@ async function updateFormatBadge(audioSrc) {
                 }
             }
         } catch (e) {
-            console.log('Failed to fetch stream headers for badge', e);
         }
     }
     
@@ -3500,7 +3498,6 @@ const MAX_CONSECUTIVE_FAILURES = 5;
 async function loadTrack(track) {
     // Prevent duplicate loads
     if (loadInProgress) {
-        console.log('Load already in progress, skipping duplicate load for:', track.name);
         return;
     }
     
@@ -3561,13 +3558,11 @@ async function loadTrack(track) {
                 const foundTrack = searchData.results[0];
                 if (foundTrack.album_art && foundTrack.album_art !== '/static/icon.svg') {
                     track.album_art = foundTrack.album_art;
-                    console.log('Enriched LB track with album art:', foundTrack.album_art);
                     updatePlayerUI(); // Refresh the player bar with new art
                     updateFullscreenUI(track);
                 }
             }
         } catch (e) {
-            console.log('Could not enrich LB track art:', e);
         }
     }
     
@@ -3649,7 +3644,6 @@ async function loadTrack(track) {
         
         // Auto-skip to next track if there are more in the queue
         if (consecutiveFailures < MAX_CONSECUTIVE_FAILURES && state.currentIndex < state.queue.length - 1) {
-            console.log(`Auto-skipping failed track (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${track.name}`);
             showToast(`Skipping "${track.name}" — failed to load`, 'warning');
             loadInProgress = false; // Must reset before calling playNext
             playNext();
@@ -3740,7 +3734,6 @@ function togglePlay() {
 function playNext(forceAdvance) {
     // Guard against race conditions - if gapless transition is already handling this, skip
     if (transitionInProgress) {
-        console.log('playNext: Transition already in progress, skipping to prevent double-trigger');
         return;
     }
     
@@ -3766,7 +3759,6 @@ function playNext(forceAdvance) {
         
         // Try to use preloaded player (no loading screen) - ONLY if ready
         if (preloadedReady && preloadedPlayer && preloadedTrackId === state.queue[state.currentIndex]?.id) {
-            console.log('playNext: Using preloaded player for:', state.queue[state.currentIndex].name);
             preloadedTrackId = null;
             preloadedReady = false;
             updatePlayerUI();
@@ -3794,6 +3786,10 @@ function playNext(forceAdvance) {
 }
 
 function playPrevious() {
+    // Cancel any active crossfade to prevent stale playNext trigger
+    if (crossfadeTimeout) { clearTimeout(crossfadeTimeout); crossfadeTimeout = null; }
+    transitionInProgress = false;
+
     const currentTrack = state.queue[state.currentIndex];
     const player = getActivePlayer();
     // Podcast/Audiobook: seek -15s instead of prev track
@@ -3831,7 +3827,6 @@ function handlePause(e) {
         if (currentTrack && (currentTrack.source === 'podcast' || currentTrack.source === 'audiobook')) {
             if (player.currentTime > 5) {
                 saveEpisodePosition(currentTrack.id, player.currentTime);
-                console.log(`Saved resume position on pause: ${currentTrack.name} @ ${Math.floor(player.currentTime)}s`);
             }
         }
     }
@@ -3852,14 +3847,12 @@ function handleProgress() {
 function handleEnded(e) {
     // Skip if gapless transition is actively in progress
     if (transitionInProgress) {
-        console.log('handleEnded: Skipping playNext (transition in progress)');
         return;
     }
     // Clear stale crossfade guard — timer may have been frozen by Android background throttling
     if (crossfadeTimeout) {
         clearTimeout(crossfadeTimeout);
         crossfadeTimeout = null;
-        console.log('handleEnded: Cleared stale crossfadeTimeout (was frozen in background)');
     }
     // Only respond if the active player fired this event
     if (e.target !== getActivePlayer()) return;
@@ -4125,7 +4118,6 @@ function loadQueueFromStorage() {
                 if (state.queue[state.currentIndex]) {
                     updatePlayerUI();
                 }
-                console.log(`Restored queue: ${state.queue.length} tracks`);
             }
         }
     } catch (e) {
@@ -4177,7 +4169,6 @@ function preloadNextTrack() {
     
     preloadedTrackId = nextTrack.id;
     preloadedReady = false; // Reset ready flag
-    console.log('Preloading next track into inactive player:', nextTrack.name);
     
     const query = `${nextTrack.name} ${nextTrack.artists}`;
     const hiresParam = state.hiResMode ? '&hires=true' : '&hires=false';
@@ -4191,16 +4182,21 @@ function preloadNextTrack() {
     // Set up canplaythrough listener for reliable ready detection
     const onReady = () => {
         preloadedReady = true;
-        console.log('Preloaded track ready (canplaythrough):', nextTrack.name);
         inactivePlayer.removeEventListener('canplaythrough', onReady);
     };
+    const onError = () => {
+        preloadedReady = false;
+        preloadedTrackId = null;
+        preloadedPlayer = null;
+        inactivePlayer.removeEventListener('canplaythrough', onReady);
+        inactivePlayer.removeEventListener('error', onError);
+    };
     inactivePlayer.addEventListener('canplaythrough', onReady);
-    
+    inactivePlayer.addEventListener('error', onError, { once: true });
+
     inactivePlayer.src = streamUrl;
     inactivePlayer.load();
     preloadedPlayer = inactivePlayer;
-    
-    console.log('Next track loading into player', activePlayer === 1 ? 2 : 1);
 }
 
 // Get the currently active audio player
@@ -4245,7 +4241,6 @@ function performCrossfade() {
         oldPlayer.currentTime = 0;
     }, CROSSFADE_DURATION + 100);
     
-    console.log('Crossfade to player', activePlayer);
 }
 
 // Instant gapless switch (no crossfade)
@@ -4268,7 +4263,6 @@ function performGaplessSwitch() {
     oldPlayer.pause();
     oldPlayer.currentTime = 0;
     
-    console.log('Gapless switch to player', activePlayer);
 }
 
 // ========== UI HELPERS ==========
@@ -4668,17 +4662,6 @@ playerArtist.addEventListener('click', () => {
    }
 });
 
-// ========== TOAST NOTIFICATIONS ==========
-function showToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
-    toastContainer.appendChild(toast);
-    
-    // Remove after animation
-    setTimeout(() => toast.remove(), 3000);
-}
-
 // ========== VOLUME CONTROL ==========
 // Shared volume update function
 function updateVolume(vol) {
@@ -4945,7 +4928,6 @@ function initEqualizer() {
         // Auto-resume AudioContext when Android suspends it in background
         audioContext.onstatechange = () => {
             if (audioContext.state === 'suspended' && state.isPlaying) {
-                console.log('AudioContext suspended while playing — auto-resuming');
                 audioContext.resume();
             }
         };
@@ -5007,7 +4989,6 @@ function initEqualizer() {
         // Load saved settings
         loadEqSettings();
         
-        console.log('Equalizer initialized with crossfade support');
     } catch (e) {
         console.error('Failed to initialize equalizer:', e);
     }
@@ -5219,29 +5200,24 @@ function updateMediaSession(track) {
         ]
     });
     navigator.mediaSession.playbackState = 'playing';
-    console.log('MediaSession metadata set for:', track.name);
 }
 
 // Register action handlers at page load — they persist across playbacks (per web.dev spec)
 if ('mediaSession' in navigator) {
     const actionHandlers = [
         ['play', async () => {
-            console.log('MediaSession: play action triggered');
             if (audioContext?.state === 'suspended') {
                 await audioContext.resume();
             }
             await getActivePlayer().play().catch(e => console.warn('MediaSession play failed:', e));
         }],
         ['pause', () => {
-            console.log('MediaSession: pause action triggered');
             getActivePlayer().pause();
         }],
         ['previoustrack', () => {
-            console.log('MediaSession: previoustrack action triggered');
             playPrevious();
         }],
         ['nexttrack', () => {
-            console.log('MediaSession: nexttrack action triggered');
             playNext();
         }],
         ['seekbackward', (details) => {
@@ -5272,9 +5248,7 @@ if ('mediaSession' in navigator) {
     for (const [action, handler] of actionHandlers) {
         try {
             navigator.mediaSession.setActionHandler(action, handler);
-            console.log(`MediaSession: registered '${action}' handler`);
         } catch (error) {
-            console.log(`MediaSession: '${action}' not supported`);
         }
     }
 }
@@ -5304,7 +5278,6 @@ document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         // Resume main AudioContext if suspended while playing
         if (audioContext?.state === 'suspended' && state.isPlaying) {
-            console.log('Visibility restored — resuming AudioContext');
             audioContext.resume();
         }
         // Clear stale crossfade guard that may have been frozen
@@ -5315,7 +5288,6 @@ document.addEventListener('visibilitychange', () => {
         // If we should be playing but audio is paused, try to resume
         const player = getActivePlayer();
         if (state.isPlaying && player.paused && player.readyState >= 2) {
-            console.log('Visibility restored — resuming paused playback');
             player.play().catch(() => {});
         }
     }
@@ -5325,7 +5297,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => {
     const player = getActivePlayer();
     if (state.isPlaying && (player.paused || player.readyState < 3)) {
-        console.log('Network restored — attempting stream recovery');
         const pos = player.currentTime;
         player.currentTime = pos; // Force reconnect by seeking to current position
         player.play().catch(() => {});
@@ -5350,11 +5321,9 @@ let googleAccessToken = null;
             const config = await res.json();
             if (config.google_client_id) {
                 GOOGLE_CLIENT_ID = config.google_client_id;
-                console.log('Google Client ID loaded from server config');
             }
         }
     } catch (e) {
-        console.log('Could not load server config:', e.message);
     }
 })();
 const syncBtn = $('#sync-btn');
@@ -5364,7 +5333,6 @@ const syncBtn = $('#sync-btn');
 window.initGoogleApi = function() {
     return new Promise((resolve) => {
         if (typeof gapi === 'undefined') {
-            console.log('Google API not loaded yet');
             resolve(false);
             return;
         }
@@ -5373,7 +5341,6 @@ window.initGoogleApi = function() {
                 await gapi.client.init({
                     discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
                 });
-                console.log("Google Drive API initialized");
                 resolve(true);
             } catch (e) {
                 console.error('Failed to init Google API:', e);
@@ -6365,7 +6332,6 @@ function initDragAndDrop() {
         handleDrop(e);
     }, false);
     
-    console.log("Drag & Drop initialized on window");
 }
 
 function initManualUpload() {
@@ -6373,11 +6339,9 @@ function initManualUpload() {
     const fileInput = document.getElementById('file-input');
     
     if (fileInput) {
-        console.log("Initializing Manual Upload via Label");
         // No click listener needed for Label
         
         fileInput.addEventListener('change', (e) => {
-             console.log("File Input Changed", e.target.files);
              if (e.target.files && e.target.files.length > 0) {
                  handleFiles(e.target.files);
              }
@@ -6395,7 +6359,6 @@ function handleDrop(e) {
 
 async function handleFiles(files) {
     // alert(`DEBUG: handleFiles called with ${files.length} files`);
-    console.log("HandleFiles Entry:", files.length);
 
     const validExtensions = ['.mp3', '.flac', '.wav', '.aiff', '.aac', '.ogg', '.m4a', '.wma'];
     
@@ -6452,7 +6415,6 @@ function extractMetadata(file) {
         window.jsmediatags.read(file, {
             onSuccess: (tag) => {
                 const tags = tag.tags;
-                console.log("Raw tags from jsmediatags:", Object.keys(tags)); // DEBUG: Show all tag names
                 
                 let picture = null;
                 if (tags.picture) {
@@ -6483,18 +6445,15 @@ function extractMetadata(file) {
                     
                     if (!bpm && (lowerName.includes('bpm') || lowerName.includes('beats'))) {
                         bpm = val;
-                        console.log(`Found BPM in tag "${tagName}":`, val);
                     }
                     if (!key && (lowerName.includes('key') || lowerName === 'tkey')) {
                         key = val;
-                        console.log(`Found Key in tag "${tagName}":`, val);
                     }
                 }
                 
                 // Parse BPM as integer
                 if (bpm) bpm = parseInt(String(bpm).replace(/\D/g, ''), 10) || null;
                 
-                console.log("Final Extracted BPM:", bpm, "Key:", key); // DEBUG
 
                 resolve({
                     title: tags.title || file.name,
@@ -6573,7 +6532,6 @@ let aiRadioInterval = null;
 // Toggle AI Radio
 if (aiRadioBtn) {
     aiRadioBtn.addEventListener('click', () => {
-        console.log('AI Radio button clicked!');
         state.aiRadioActive = !state.aiRadioActive;
         aiRadioBtn.classList.toggle('active', state.aiRadioActive);
         
@@ -6586,7 +6544,6 @@ if (aiRadioBtn) {
                 bpm: currentTrack.audio_features?.bpm,
                 camelot: currentTrack.audio_features?.camelot
             } : null;
-            console.log('AI Radio seed track:', state.aiRadioSeedTrack);
             
             showAIRadioStatus('AI Radio Active');
             showToast('📻 AI Radio started! Will auto-add similar tracks.');
@@ -6594,7 +6551,6 @@ if (aiRadioBtn) {
             
             // Set up periodic check every 2 minutes (120 seconds)
             aiRadioInterval = setInterval(() => {
-                console.log('AI Radio periodic check...');
                 checkAndAddTracks();
             }, 120000);
         } else {
@@ -6636,7 +6592,6 @@ async function checkAndAddTracks() {
     if (!state.aiRadioActive || state.aiRadioFetching) return;
     
     const remainingTracks = state.queue.length - Math.max(0, state.currentIndex) - 1;
-    console.log('AI Radio check:', { queueLen: state.queue.length, currentIndex: state.currentIndex, remaining: remainingTracks });
     
     // Add more tracks if we have less than 3 remaining
     if (remainingTracks < 3) {
@@ -6661,7 +6616,6 @@ async function checkAndAddTracks() {
                 count: 5
             };
             
-            console.log('AI Radio request:', requestBody);
             
             const response = await fetch('/api/ai-radio/generate', {
                 method: 'POST',
@@ -6671,7 +6625,6 @@ async function checkAndAddTracks() {
             
             if (response.ok) {
                 const data = await response.json();
-                console.log('AI Radio response:', data);
                 const searchTerms = data.search_terms || [];
                 
                 // Search and add tracks
@@ -6737,7 +6690,6 @@ audioPlayer?.addEventListener('ended', () => {
 });
 
 // alert("DEBUG: App.js initialization COMPLETE. If you see this, script is good.");
-console.log("App.js initialization COMPLETE");
 
 // ========== ADD TO PLAYLIST MODAL ==========
 const playlistModal = $('#playlist-modal');
@@ -6879,7 +6831,6 @@ async function submitScrobble(track) {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(track)
             });
-            console.log('LB Scrobbled:', track.name);
         } catch (e) { console.error('LB Scrobble error:', e); }
     }
     
@@ -6897,7 +6848,6 @@ async function submitScrobble(track) {
                     timestamp: Math.floor(Date.now() / 1000)
                 })
             });
-            console.log('Last.fm Scrobbled:', track.name);
         } catch (e) { console.error('Last.fm Scrobble error:', e); }
     }
 }
@@ -6907,7 +6857,6 @@ fetch('/api/listenbrainz/validate')
     .then(res => res.json())
     .then(data => {
         state.listenBrainzConfig = data;
-        if (data.valid) console.log('ListenBrainz connected:', data.username);
     })
     .catch(console.error);
 
@@ -6990,7 +6939,6 @@ fetch('/api/listenbrainz/validate')
     });
     
     if (lfmSessionKey) {
-        console.log('Last.fm connected:', lfmUsername);
     }
 })();
 
@@ -7034,7 +6982,6 @@ async function exchangeLastFMToken(token) {
             }
             
             showToast(`🎵 Connected to Last.fm as ${data.username}`);
-            console.log('Last.fm connected:', data.username);
         } else {
             showToast('Last.fm authorization failed');
         }
@@ -7225,7 +7172,6 @@ async function openSpotifyPlaylist(playlistId) {
         if (!res.ok) throw new Error(playlist.detail);
         
         hideLoading();
-        console.log('Opening Spotify playlist:', playlist.name, playlist);
         
         // Show in detail view
         showDetailView(playlist, playlist.tracks || []);
@@ -7245,7 +7191,6 @@ async function openLBPlaylist(playlistId) {
         if (!res.ok) throw new Error(playlist.detail);
         
         hideLoading();
-        console.log('Opening LB playlist:', playlist.name, playlist);
         
         // Show in detail view
         showDetailView(playlist, playlist.tracks || []);
@@ -7621,7 +7566,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-console.log('AI Assistant module loaded');
 
 // ========== KEYBOARD SHORTCUTS ==========
 // Use existing shortcuts modal
@@ -7791,7 +7735,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-console.log('Keyboard shortcuts loaded');
 
 // ========== INIT: Load persisted state ==========
 // Load saved queue on startup
@@ -7803,7 +7746,6 @@ setTimeout(() => {
     if (volumeSlider) {
         volumeSlider.value = Math.round(state.volume * 100);
     }
-    console.log(`Volume restored: ${Math.round(state.volume * 100)}%`);
 }, 100);
 
 // ========== LYRICS MODAL ==========
@@ -7971,7 +7913,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-console.log('Lyrics modal loaded');
 
 // ========== MUSIC VIDEO ==========
 const fsVideoBtn = $('#fs-video-btn');
@@ -8018,7 +7959,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-console.log('Music video feature loaded');
 
 // Concerts feature removed per user request
 
@@ -8043,11 +7983,38 @@ let butterchurnVisualizer = null;
 let butterchurnPresets = [];
 let butterchurnPresetNames = [];
 let currentPresetIndex = 0;
+let _butterchurnLoading = false;
+
+function _loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+    });
+}
+
+async function ensureButterchurnLoaded() {
+    if (window.butterchurn) return;
+    if (_butterchurnLoading) {
+        // Wait for the other caller to finish loading
+        while (_butterchurnLoading) await new Promise(r => setTimeout(r, 100));
+        return;
+    }
+    _butterchurnLoading = true;
+    try {
+        await _loadScript('https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js');
+        await _loadScript('https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js');
+    } finally {
+        _butterchurnLoading = false;
+    }
+}
 
 function initButterchurn() {
     const bc = window.butterchurn?.default || window.butterchurn;
     if (butterchurnVisualizer || !bc) {
-        if (!bc) console.error('Butterchurn library not found on window object');
+        if (!bc) console.error('Butterchurn library not loaded yet');
         return null;
     }
     
@@ -8074,7 +8041,6 @@ function initButterchurn() {
             
             butterchurnPresets = presets;
             butterchurnPresetNames = Object.keys(butterchurnPresets);
-            console.log(`Loaded ${butterchurnPresetNames.length} MilkDrop presets`);
             
             // Load a random preset to start
             if (butterchurnPresetNames.length > 0) {
@@ -8086,7 +8052,6 @@ function initButterchurn() {
         // Connect to audio
         butterchurnVisualizer.connectAudio(vizAnalyser || volumeBoostGain);
         
-        console.log('Butterchurn initialized');
         return butterchurnVisualizer;
     } catch (e) {
         console.error('Failed to init Butterchurn:', e);
@@ -8105,7 +8070,6 @@ function loadButterchurnPreset(index) {
     const presetName = butterchurnPresetNames[index];
     const preset = butterchurnPresets[presetName];
     
-    console.log(`Loading preset [${index}]: ${presetName}`, preset ? 'found' : 'missing');
     
     if (preset) {
         try {
@@ -8118,12 +8082,10 @@ function loadButterchurnPreset(index) {
 }
 
 function nextButterchurnPreset() {
-    console.log('Next preset clicked');
     loadButterchurnPreset(currentPresetIndex + 1);
 }
 
 function prevButterchurnPreset() {
-    console.log('Prev preset clicked');
     loadButterchurnPreset(currentPresetIndex - 1);
 }
 
@@ -8162,7 +8124,6 @@ function initVisualizerAnalyser() {
             console.warn('No volumeBoostGain, visualizer may not work well');
         }
         
-        console.log('Visualizer analyser connected to audio chain');
     } catch (e) {
         console.error('Failed to init visualizer analyser:', e);
     }
@@ -8393,7 +8354,7 @@ function openVisualizer() {
     
     // Initial visibility
     if (visualizerMode === 'milkdrop') {
-        if (!butterchurnVisualizer) initButterchurn();
+        ensureButterchurnLoaded().then(() => { if (!butterchurnVisualizer) initButterchurn(); });
         visualizerCanvasWebgl?.classList.remove('hidden');
         visualizerCanvas?.classList.add('hidden');
     } else {
@@ -8470,9 +8431,9 @@ vizModeBtns.forEach(btn => {
             visualizerMode = btn.dataset.mode;
             particles = []; // Clear particles when switching modes
             
-            // Init Butterchurn if needed
+            // Init Butterchurn if needed (lazy-load scripts first)
             if (visualizerMode === 'milkdrop') {
-                if (!butterchurnVisualizer) initButterchurn();
+                ensureButterchurnLoaded().then(() => { if (!butterchurnVisualizer) initButterchurn(); });
                 // Toggle canvases
                 if (visualizerCanvasWebgl) {
                     visualizerCanvasWebgl.classList.remove('hidden');
@@ -8521,7 +8482,6 @@ window.addEventListener('resize', () => {
     }
 });
 
-console.log('Audio visualizer loaded');
 
 // ========== CONCERT ALERTS ==========
 
@@ -8753,7 +8713,6 @@ concertArtistSearch?.addEventListener('keydown', (e) => {
     }
 });
 
-console.log('Concert alerts loaded');
 
 // ==================== ARTIST BIO MODAL ====================
 const artistBioModal = $('#artist-bio-modal');
@@ -9452,7 +9411,6 @@ async function loadAudiobookFolder(folderId, audiobookDetails) {
                 state.audiobookFavorites[favIdx].description = audiobookDetails.description;
             }
             saveAudiobookFavorites();
-            console.log('Cached audiobook tracks for:', audiobookDetails.title);
         }
         
     } catch (e) {

@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Query, Response, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 import zipfile
 import io
@@ -59,6 +60,17 @@ import time
 _stream_url_cache: dict = {}
 STREAM_CACHE_TTL = 1800  # 30 minutes
 
+async def _purge_expired_stream_urls():
+    """Periodically remove expired entries from the in-memory stream URL cache."""
+    while True:
+        await asyncio.sleep(STREAM_CACHE_TTL)  # Run every 30 minutes
+        now = time.time()
+        expired = [k for k, v in _stream_url_cache.items() if now - v[2] > STREAM_CACHE_TTL]
+        for k in expired:
+            del _stream_url_cache[k]
+        if expired:
+            logger.info(f"Purged {len(expired)} expired stream URL cache entries")
+
 async def keep_awake_ping():
     """Background task to ping the server and prevent Render spin-down."""
     import httpx
@@ -97,17 +109,23 @@ async def lifespan(app: FastAPI):
     
     # Start auto-ping task to prevent Render spin-down
     ping_task = asyncio.create_task(keep_awake_ping())
-    
+
+    # Periodically purge expired stream URL cache entries
+    stream_cache_task = asyncio.create_task(_purge_expired_stream_urls())
+
     yield
-    
+
     # Cleanup on shutdown
     cleanup_task.cancel()
     ping_task.cancel()
+    stream_cache_task.cancel()
     await deezer_service.close()
     await live_show_service.close()
     await spotify_service.close()
     await audio_service.close()
     await podcast_service.close()
+    import app.tidal_service as tidal_service
+    await tidal_service.close()
     logger.info("Server shutdown complete.")
 
 
@@ -116,6 +134,9 @@ app = FastAPI(
     description="Stream music from Deezer, Spotify URLs, and Live Archives",
     lifespan=lifespan
 )
+
+# GZip compression for static assets (app.js 370KB, styles.css 156KB)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # CORS for mobile access
 app.add_middleware(
@@ -126,12 +147,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Middleware to set COOP header for Google OAuth popups
+# Middleware to set COOP header and cache-control for static assets
 @app.middleware("http")
-async def add_security_headers(request, call_next):
+async def add_custom_headers(request, call_next):
     response = await call_next(request)
     # Allow popups (like Google Sign-In) to communicate with window
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    # Cache static assets for 24 hours (versioned via query param in index.html)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
 
@@ -306,29 +330,64 @@ async def search(
         if live_results is not None:
             return {"results": live_results, "query": q, "type": "album", "source": "live_shows"}
         
-        # Regular search - Use Tidal (Priority), then Qobuz, then Dab, then Deezer
+        # Regular search - Run Tidal and Deezer concurrently, prefer Tidal results
         logger.info(f"Searching: {q} (type: {type}, offset: {offset})")
-        
+
         results = []
         source = "deezer"
-        
-        # 0. Try Tidal FIRST
-        if type in ["album", "track"]:
+
+        # Helper coroutines for concurrent search
+        async def _tidal_search():
+            if type not in ["album", "track"]:
+                return []
             try:
                 import app.tidal_service as tidal_service
                 if type == "album":
-                    tidal_results = await tidal_service.search_albums(q, limit=20, offset=offset)
+                    return await tidal_service.search_albums(q, limit=20, offset=offset)
                 else:
-                    tidal_results = await tidal_service.search_tracks(q, limit=20, offset=offset)
-                
-                if tidal_results:
-                    logger.info(f"Found {len(tidal_results)} results on Tidal")
-                    results = tidal_results
-                    source = "tidal"
+                    return await tidal_service.search_tracks(q, limit=20, offset=offset)
             except Exception as e:
                 logger.error(f"Tidal search error: {e}")
-        
-        # 1. Try Qobuz (Squid.wtf) if Tidal found no results [BYPASSED — currently broken]
+                return []
+
+        async def _deezer_search():
+            try:
+                if type == "album":
+                    return await deezer_service.search_albums(q, limit=20, offset=offset)
+                elif type == "artist":
+                    return await deezer_service.search_artists(q, limit=20, offset=offset)
+                else:
+                    return await deezer_service.search_tracks(q, limit=20, offset=offset)
+            except Exception as e:
+                logger.error(f"Deezer search error: {e}")
+                return []
+
+        # Race Tidal (5s timeout) and Deezer concurrently
+        tidal_task = asyncio.create_task(asyncio.wait_for(_tidal_search(), timeout=5.0))
+        deezer_task = asyncio.create_task(_deezer_search())
+
+        try:
+            tidal_results = await tidal_task
+        except (asyncio.TimeoutError, Exception):
+            tidal_results = []
+
+        if tidal_results:
+            results = tidal_results
+            source = "tidal"
+            deezer_task.cancel()
+            logger.info(f"Found {len(results)} results on Tidal")
+        else:
+            # Tidal failed or empty — use Deezer results
+            try:
+                deezer_results = await deezer_task
+            except Exception:
+                deezer_results = []
+            if deezer_results:
+                results = deezer_results
+                source = "deezer"
+                logger.info(f"Found {len(results)} results on Deezer")
+
+        # [BYPASSED] Qobuz and Dab — re-enable when fixed
         from app.audio_service import ENABLE_QOBUZ, ENABLE_DAB
         if ENABLE_QOBUZ and not results and type in ["album", "track"] and offset == 0:
             try:
@@ -337,15 +396,12 @@ async def search(
                     qobuz_results = await qobuz_service.search_albums(q, limit=10)
                 else:
                     qobuz_results = await qobuz_service.search_tracks(q, limit=10)
-                
                 if qobuz_results:
-                    logger.info(f"Found {len(qobuz_results)} results on Qobuz")
                     results = qobuz_results
                     source = "qobuz"
             except Exception as e:
                 logger.error(f"Qobuz search error: {e}")
 
-        # 1b. Try Dab Music (fallback/alternative Hi-Res) [BYPASSED — currently broken]
         if ENABLE_DAB and not results and type in ["album", "track"] and offset == 0:
             try:
                 from app.dab_service import dab_service
@@ -353,25 +409,11 @@ async def search(
                     dab_results = await dab_service.search_albums(q, limit=10)
                 else:
                     dab_results = await dab_service.search_tracks(q, limit=10)
-                
                 if dab_results:
-                    logger.info(f"Found {len(dab_results)} results on Dab Music")
                     results = dab_results
                     source = "dab"
             except Exception as e:
                 logger.error(f"Dab search error: {e}")
-
-        # 2. Fallback to Deezer if no Dab results
-        if not results:
-            logger.info(f"Falling back to Deezer search...")
-            if type == "album":
-                results = await deezer_service.search_albums(q, limit=20, offset=offset)
-            elif type == "artist":
-                results = await deezer_service.search_artists(q, limit=20, offset=offset)
-            else:
-                results = await deezer_service.search_tracks(q, limit=20, offset=offset)
-            if results:
-                source = "deezer"
         
         # 3. Final fallback to Jamendo (independent/CC music) if still no results
         if not results and type in ["track", "album", "artist"]:
@@ -1115,34 +1157,41 @@ async def get_progress(download_id: str):
 
 @app.post("/api/download-batch")
 async def download_batch(request: BatchDownloadRequest):
-    """Download multiple tracks as a ZIP file with parallel processing."""
+    """Download multiple tracks as a ZIP file with parallel processing.
+    Uses a temp file instead of in-memory buffer to avoid OOM on Render."""
+    import tempfile
+    from starlette.background import BackgroundTask
+
+    tmp_path = None
     try:
         final_name = request.zip_name or request.album_name or "download"
         logger.info(f"Batch download request: {len(request.tracks)} tracks from {final_name}")
-        
-        # In-memory ZIP buffer
-        zip_buffer = io.BytesIO()
-        
+
+        # Write ZIP to a temp file instead of BytesIO to avoid OOM
+        tmp = tempfile.NamedTemporaryFile(suffix='.zip', delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
         # Initialize progress tracking
         if request.download_id:
             download_progress[request.download_id] = {
-                "current": 0, 
+                "current": 0,
                 "total": len(request.tracks),
                 "status": "processing"
             }
-        
+
         # Concurrency control (3 concurrent downloads)
         semaphore = asyncio.Semaphore(3)
         zip_lock = asyncio.Lock()
         used_names = set()
-        
+
         async def process_track(i: int, isrc: str):
             async with semaphore:
                 try:
                     logger.info(f"Starting track {i+1}/{len(request.tracks)}: {request.names[i]}")
-                    
+
                     query = f"{request.names[i]} {request.artists[i]}"
-                    
+
                     # Build metadata
                     provided_metadata = {
                         "title": request.names[i],
@@ -1152,74 +1201,71 @@ async def download_batch(request: BatchDownloadRequest):
                         "album_art_url": request.album_art_urls[i] if request.album_art_urls and i < len(request.album_art_urls) else None,
                         "total_tracks": len(request.tracks) * request.total_parts if request.album_name else None
                     }
-                    
+
                     # Download
                     result = await audio_service.get_download_audio(
-                        isrc, 
-                        query, 
+                        isrc,
+                        query,
                         request.format,
                         track_number=i+1,
                         provided_metadata=provided_metadata
                     )
-                    
+
                     if result:
                         data, ext, _ = result
-                        
+
                         # Calculate filename
                         safe_name = f"{request.artists[i]} - {request.names[i]}".replace("/", "_").replace("\\", "_").replace(":", "_").replace("*", "").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
                         filename = f"{safe_name}{ext}"
-                        
+
                         # Write to ZIP (atomic operation via lock)
                         async with zip_lock:
                             # Handle duplicates
                             count = 1
-                            base_filename = filename
                             while filename in used_names:
                                 filename = f"{safe_name} ({count}){ext}"
                                 count += 1
                             used_names.add(filename)
-                            
+
                             zip_file.writestr(filename, data)
                             logger.info(f"Added to ZIP: {filename}")
-                            
+
                             # Update progress
                             if request.download_id:
                                 download_progress[request.download_id]["current"] += 1
-                                
+
                 except Exception as e:
                     logger.error(f"Failed to download track {isrc}: {e}")
-                    # Don't raise, just continue (partial success)
-        
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            # Create tasks
+
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
             tasks = [process_track(i, isrc) for i, isrc in enumerate(request.tracks)]
             await asyncio.gather(*tasks)
 
         # Cleanup progress
         if request.download_id and request.download_id in download_progress:
             del download_progress[request.download_id]
-        
-        zip_buffer.seek(0)
-        final_name = request.zip_name or request.album_name or "download"
+
         safe_album = final_name.replace("/", "_").replace("\\", "_").replace(":", "_")
-        
-        # Name ZIP with part number
         if request.total_parts > 1:
             filename = f"{safe_album} (Part {request.part} of {request.total_parts}).zip"
         else:
             filename = f"{safe_album}.zip"
-        
-        logger.info(f"ZIP complete: {filename} ({len(zip_buffer.getvalue())} bytes)")
-        
-        return Response(
-            content=zip_buffer.getvalue(),
+
+        zip_size = os.path.getsize(tmp_path)
+        logger.info(f"ZIP complete: {filename} ({zip_size} bytes)")
+
+        # Return file and delete temp file after response is sent
+        return FileResponse(
+            tmp_path,
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
+            filename=filename,
+            background=BackgroundTask(os.unlink, tmp_path)
         )
-        
+
     except Exception as e:
+        # Clean up temp file on error
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
         logger.error(f"Batch download error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

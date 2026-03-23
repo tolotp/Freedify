@@ -17,31 +17,38 @@ from app.audio_service import TIDAL_APIS as _TIDAL_APIS
 PROXY_TARGETS = list(_TIDAL_APIS)
 random.shuffle(PROXY_TARGETS)
 
+# Persistent HTTP client — reuses TCP connections across requests
+_client = httpx.AsyncClient(
+    timeout=10.0,
+    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "X-Client": "BiniLossless/1.0"
+    }
+)
+
+async def close():
+    """Close the persistent HTTP client (called on server shutdown)."""
+    await _client.aclose()
+
 async def _fetch_from_proxy(endpoint: str) -> Optional[Dict[Any, Any]]:
     """
     Attempt to fetch data from the proxy cluster, trying fallback URLs if one fails.
     """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "X-Client": "BiniLossless/1.0"
-    }
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for target in PROXY_TARGETS:
-            url = f"{target.rstrip('/')}/{endpoint.lstrip('/')}"
-            try:
-                response = await client.get(url, headers=headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    return data
-                elif response.status_code == 429:
-                    logger.warning(f"Tidal proxy {target} rate-limited. Trying next...")
-                    continue
-                else:
-                    logger.warning(f"Tidal proxy {target} returned {response.status_code}")
-            except Exception as e:
-                logger.debug(f"Tidal proxy {target} failed: {str(e)}")
+    for target in PROXY_TARGETS:
+        url = f"{target.rstrip('/')}/{endpoint.lstrip('/')}"
+        try:
+            response = await _client.get(url)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                logger.warning(f"Tidal proxy {target} rate-limited. Trying next...")
                 continue
+            else:
+                logger.warning(f"Tidal proxy {target} returned {response.status_code}")
+        except Exception as e:
+            logger.debug(f"Tidal proxy {target} failed: {str(e)}")
+            continue
 
     logger.error("All Tidal API proxies failed.")
     return None

@@ -6,7 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [1.4.0] - 2026-03-23
+
+### Performance
+- **GZip Compression**: Added GZip middleware — reduces static asset transfer by ~70% (580KB → ~150KB)
+- **Parallel Search**: Tidal and Deezer searches now run concurrently instead of sequentially (search latency ~50% faster)
+- **HTTP Connection Pooling**: Tidal proxy service now reuses TCP connections instead of creating new ones per request
+- **Album Art Caching**: In-memory LRU cache prevents re-downloading the same cover art per album during batch downloads
+- **Skip MusicBrainz Enrichment**: Downloads skip MusicBrainz API call when metadata is already complete (~1s saved per track)
+- **Lazy-Load Visualizer**: Butterchurn scripts (~450KB) now load on-demand instead of on every page visit
+- **Static Asset Caching**: Added Cache-Control headers (24h) for `/static/` assets with versioned query params
+
+### Fixed
+- **Batch Download OOM**: ZIP files now written to disk instead of memory — prevents out-of-memory crashes on Render free tier
+- **Tidal Token Race Condition**: Added asyncio.Lock to prevent concurrent token refresh races causing 401 errors
+- **Crossfade Race Condition**: Fixed clicking prev during crossfade triggering unexpected playNext; added preload error recovery
+- **Spotify Rate Limit**: Added random jitter to backoff to prevent thundering herd retries
+- **localStorage Crash Protection**: All JSON.parse calls wrapped in try-catch — corrupted data no longer crashes the app
+- **Duplicate showToast()**: Removed duplicate function definition (kept the enhanced version with animation)
+- **Stream URL Cache Leak**: Added periodic cleanup of expired in-memory stream URL cache entries
+
+### Changed
+- Removed ~80 debug console.log statements from production app.js
+- Added library size cap (2000 entries) to prevent localStorage overflow
+- Version query param added to app.js script tag for cache busting
 
 ---
 

@@ -66,10 +66,29 @@ PROXY_RACE_COUNT = 3
 
 class AudioService:
     """Service for fetching and transcoding audio."""
-    
+
     # Tidal credentials
     TIDAL_CLIENT_ID = base64.b64decode("NkJEU1JkcEs5aHFFQlRnVQ==").decode()
     TIDAL_CLIENT_SECRET = base64.b64decode("eGV1UG1ZN25icFo5SUliTEFjUTkzc2hrYTFWTmhlVUFxTjZJY3N6alRHOD0=").decode()
+
+    # In-memory album art cache to avoid re-downloading the same cover per album
+    _art_cache: dict = {}
+    _ART_CACHE_MAX = 20
+
+    async def _cached_fetch_art(self, url: str) -> bytes | None:
+        """Fetch album art with simple LRU cache (bounded to _ART_CACHE_MAX entries)."""
+        if url in self._art_cache:
+            return self._art_cache[url]
+        try:
+            resp = await self.client.get(url)
+            if resp.status_code == 200:
+                if len(self._art_cache) >= self._ART_CACHE_MAX:
+                    self._art_cache.pop(next(iter(self._art_cache)))
+                self._art_cache[url] = resp.content
+                return resp.content
+        except Exception as e:
+            logger.debug(f"Failed to fetch album art from {url}: {e}")
+        return None
 
     async def import_url(self, url: str) -> Optional[Dict[str, Any]]:
         """Import track or playlist from URL using yt-dlp."""
@@ -300,23 +319,25 @@ class AudioService:
         
         self.tidal_token: Optional[str] = None
         self.working_api: Optional[str] = None  # Cache the last working API
-    
+        self._token_lock = asyncio.Lock()
+
     async def get_tidal_token(self) -> str:
-        """Get Tidal access token."""
-        if self.tidal_token:
+        """Get Tidal access token (serialized to prevent concurrent refresh races)."""
+        async with self._token_lock:
+            if self.tidal_token:
+                return self.tidal_token
+
+            response = await self.client.post(
+                "https://auth.tidal.com/v1/oauth2/token",
+                data={
+                    "client_id": self.TIDAL_CLIENT_ID,
+                    "grant_type": "client_credentials"
+                },
+                auth=(self.TIDAL_CLIENT_ID, self.TIDAL_CLIENT_SECRET)
+            )
+            response.raise_for_status()
+            self.tidal_token = response.json()["access_token"]
             return self.tidal_token
-        
-        response = await self.client.post(
-            "https://auth.tidal.com/v1/oauth2/token",
-            data={
-                "client_id": self.TIDAL_CLIENT_ID,
-                "grant_type": "client_credentials"
-            },
-            auth=(self.TIDAL_CLIENT_ID, self.TIDAL_CLIENT_SECRET)
-        )
-        response.raise_for_status()
-        self.tidal_token = response.json()["access_token"]
-        return self.tidal_token
     
     async def search_tidal_by_isrc(self, isrc: str, query: str = "") -> Optional[Dict[str, Any]]:
         """Search Tidal for a track by ISRC."""
@@ -629,15 +650,9 @@ class AudioService:
         return None
     
     async def _fetch_tidal_cover(self, cover_uuid: str) -> Optional[bytes]:
-        """Fetch Tidal album art."""
-        try:
-            url = f"https://resources.tidal.com/images/{cover_uuid.replace('-', '/')}/1280x1280.jpg"
-            response = await self.client.get(url)
-            if response.status_code == 200:
-                return response.content
-        except Exception:
-            pass
-        return None
+        """Fetch Tidal album art (cached)."""
+        url = f"https://resources.tidal.com/images/{cover_uuid.replace('-', '/')}/1280x1280.jpg"
+        return await self._cached_fetch_art(url)
 
     async def get_deezer_track_info(self, isrc: str) -> Optional[Dict]:
         """Get Deezer track info from ISRC."""
@@ -990,12 +1005,9 @@ class AudioService:
             # Fetch album art (needed for download metadata embedding)
             cover_url = deezer_info.get("album", {}).get("cover_xl")
             if cover_url:
-                try:
-                    cover_resp = await self.client.get(cover_url)
-                    if cover_resp.status_code == 200:
-                        meta["album_art_data"] = cover_resp.content
-                except:
-                    pass
+                art_data = await self._cached_fetch_art(cover_url)
+                if art_data:
+                    meta["album_art_data"] = art_data
             
             return (download_url, meta)
         except Exception as e:
@@ -1237,9 +1249,9 @@ class AudioService:
             # Download album art from provided URL if we don't have art data
             if not metadata.get("album_art_data") and provided_metadata.get("album_art_url"):
                 try:
-                    art_resp = await self.client.get(provided_metadata["album_art_url"])
-                    if art_resp.status_code == 200:
-                        metadata["album_art_data"] = art_resp.content
+                    art_data = await self._cached_fetch_art(provided_metadata["album_art_url"])
+                    if art_data:
+                        metadata["album_art_data"] = art_data
                         logger.info("Downloaded album art from provided URL")
                 except Exception as e:
                     logger.debug(f"Failed to download provided album art: {e}")
@@ -1253,36 +1265,37 @@ class AudioService:
         if provided_metadata and provided_metadata.get("total_tracks"):
             metadata["total_tracks"] = provided_metadata["total_tracks"]
         
-        # Enrich metadata with MusicBrainz (release year, label, better cover art)
-        try:
-            from app.musicbrainz_service import musicbrainz_service
-            mb_data = await musicbrainz_service.lookup_by_isrc(isrc)
-            
-            # Fallback to query if no result by ISRC (common for dab_ ids)
-            if not mb_data and (not metadata.get("year") or not metadata.get("album_art_data")):
-                mb_data = await musicbrainz_service.lookup_by_query(metadata.get("title"), metadata.get("artists"))
-            
-            if mb_data:
-                # Fill in missing fields from MusicBrainz
-                if not metadata.get("album") and mb_data.get("album"):
-                    metadata["album"] = mb_data["album"]
-                if not metadata.get("year") and mb_data.get("release_date"):
-                    metadata["year"] = mb_data["release_date"]
-                if mb_data.get("label"):
-                    metadata["label"] = mb_data["label"]
-                # Use MusicBrainz cover art if we don't have one
-                if not metadata.get("album_art_data") and mb_data.get("cover_art_url"):
-                    try:
-                        cover_resp = await self.client.get(mb_data["cover_art_url"])
-                        if cover_resp.status_code == 200:
-                            metadata["album_art_data"] = cover_resp.content
+        # Enrich metadata with MusicBrainz only when fields are missing
+        needs_enrichment = (
+            not metadata.get("year") or
+            not metadata.get("album") or
+            not metadata.get("album_art_data")
+        )
+        if needs_enrichment:
+            try:
+                from app.musicbrainz_service import musicbrainz_service
+                mb_data = await musicbrainz_service.lookup_by_isrc(isrc)
+
+                # Fallback to query if no result by ISRC (common for dab_ ids)
+                if not mb_data and (not metadata.get("year") or not metadata.get("album_art_data")):
+                    mb_data = await musicbrainz_service.lookup_by_query(metadata.get("title"), metadata.get("artists"))
+
+                if mb_data:
+                    # Fill in missing fields from MusicBrainz
+                    if not metadata.get("album") and mb_data.get("album"):
+                        metadata["album"] = mb_data["album"]
+                    if not metadata.get("year") and mb_data.get("release_date"):
+                        metadata["year"] = mb_data["release_date"]
+                    if mb_data.get("label"):
+                        metadata["label"] = mb_data["label"]
+                    # Use MusicBrainz cover art if we don't have one
+                    if not metadata.get("album_art_data") and mb_data.get("cover_art_url"):
+                        art_data = await self._cached_fetch_art(mb_data["cover_art_url"])
+                        if art_data:
+                            metadata["album_art_data"] = art_data
                             logger.info("Using cover art from Cover Art Archive")
-                        else:
-                            logger.warning(f"MB cover art download failed: {cover_resp.status_code} for {mb_data['cover_art_url']}")
-                    except Exception as e:
-                        logger.error(f"Failed to download MB cover art: {e}")
-        except Exception as e:
-            logger.debug(f"MusicBrainz enrichment skipped: {e}")
+            except Exception as e:
+                logger.debug(f"MusicBrainz enrichment skipped: {e}")
         
         # Transcode/Passthrough
         loop = asyncio.get_event_loop()

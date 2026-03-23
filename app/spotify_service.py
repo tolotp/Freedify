@@ -7,7 +7,7 @@ import httpx
 import re
 from typing import Optional, Dict, List, Any, Tuple
 import logging
-from random import randrange
+from random import randrange, uniform
 
 logger = logging.getLogger(__name__)
 
@@ -333,8 +333,9 @@ class SpotifyService:
             
             if response.status_code == 429:
                 retry_after = min(int(response.headers.get("Retry-After", retry_delay)), 10)
-                logger.warning(f"Rate limited (429). Waiting {retry_after}s before retry {attempt + 1}/{max_retries}")
-                await asyncio.sleep(retry_after)
+                jitter = uniform(0, retry_delay * 0.5)
+                logger.warning(f"Rate limited (429). Waiting {retry_after + jitter:.1f}s before retry {attempt + 1}/{max_retries}")
+                await asyncio.sleep(retry_after + jitter)
                 retry_delay *= 2
                 continue
             
