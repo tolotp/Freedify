@@ -1,4 +1,3 @@
-import httpx
 from bs4 import BeautifulSoup
 import urllib.parse
 from fastapi import HTTPException
@@ -69,7 +68,7 @@ def _create_driver():
     return driver
 
 
-def _fetch_page_with_retry(url: str, wait_selector: str = None) -> str:
+def _fetch_page_with_retry(url: str, wait_selector: str | None = None) -> str:
     """Fetch a page with Selenium, retrying on timeout. Returns page source HTML."""
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
@@ -184,13 +183,14 @@ async def search_audiobooks(query: str, page: int = 1):
 
     return results
 
+
 async def get_audiobook_details(slug: str):
     """
     Fetch details of a specific audiobook and extract the Info Hash to build a magnet link.
     """
     url = f"{ABB_BASE_URL}/{slug}/"
     if not url.endswith('/'):
-         url += '/'
+        url += '/'
 
     loop = asyncio.get_event_loop()
 
