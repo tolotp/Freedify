@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.1] - 2026-03-24
+
+### Changed
+- **ES Module Split**: Refactored monolithic `app.js` (9,472 lines) into 13 ES modules for maintainability
+  - `event-bus.js` — pub/sub for decoupled cross-module communication
+  - `state.js` — global state, helpers, constants
+  - `utils.js` — pure utilities (formatTime, escapeHtml, showToast)
+  - `dom.js` — selector helpers, DOM element references, iOS audio keepalive
+  - `data.js` — CRUD for playlists, library, history, podcasts, audiobooks, tags
+  - `audio-engine.js` — equalizer (Web Audio API), crossfade, gapless playback, preloading
+  - `playback.js` — core playback, queue UI, volume, keyboard shortcuts
+  - `ui.js` — loading/error overlays, dashboard, theme picker, HiFi mode
+  - `search.js` — search, results rendering, cards, download modal
+  - `views.js` — all modals and detail views
+  - `integrations.js` — Google Drive, scrobbling, AI Radio, mini player, local files
+  - `dj.js` — DJ mode, visualizer, concert alerts, artist bio
+  - `app.js` — entry module (imports, event bus wiring, window globals)
+- Script tag changed from `<script defer>` to `<script type="module">` in index.html
+- Service worker cache bumped to `freedify-v8` with all module files in STATIC_ASSETS
+
+### Fixed
+- **Audiobook search results not clickable**: `openAudiobook` was missing from views.js exports and app.js event bus wiring
+- **Access log spam**: Filtered out repetitive `/static/icon.svg` and `/static/placeholder.svg` requests from Uvicorn access logs
+- **Watched playlist auto-sync removed**: Playlists no longer silently scan for new tracks on every page load — sync only happens when the "Sync All" button is clicked manually
+
+---
+
 ## [1.4.0] - 2026-03-23
 
 ### Performance

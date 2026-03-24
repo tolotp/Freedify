@@ -24,6 +24,15 @@ from typing import List
 import httpx
 
 
+# Suppress noisy static asset entries from Uvicorn access log
+class _StaticAssetFilter(logging.Filter):
+    _suppressed = ("/static/icon.svg", "/static/placeholder.svg", "/static/manifest.json")
+    def filter(self, record):
+        msg = record.getMessage()
+        return not any(path in msg for path in self._suppressed)
+
+logging.getLogger("uvicorn.access").addFilter(_StaticAssetFilter())
+
 from app.deezer_service import deezer_service
 from app.live_show_service import live_show_service
 from app.spotify_service import spotify_service
@@ -1713,6 +1722,16 @@ async def delete_premiumize_item(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Filter out noisy static asset requests from access logs
+    class StaticAssetFilter(logging.Filter):
+        _suppressed = ("/static/icon.svg", "/static/placeholder.svg", "/static/manifest.json")
+        def filter(self, record):
+            msg = record.getMessage()
+            return not any(path in msg for path in self._suppressed)
+
+    logging.getLogger("uvicorn.access").addFilter(StaticAssetFilter())
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
