@@ -27,6 +27,7 @@ import {
     saveEpisodePosition, getEpisodePosition, clearEpisodePosition,
     markEpisodePlayed, saveMoodEvent,
 } from './data.js';
+import { sendTimeUpdate } from './sync.js';
 
 // ========== FORWARD DECLARATIONS (set by app.js) ==========
 // These are functions from other modules that playback needs.
@@ -568,6 +569,7 @@ export function playPrevious() {
 // ========== EVENT HANDLERS ==========
 function handlePlay() {
     state.isPlaying = true;
+    emit('playStateChanged', true);
     updatePlayButton();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     const track = state.queue[state.currentIndex];
@@ -577,6 +579,7 @@ function handlePlay() {
 function handlePause(e) {
     if (e.target === getActivePlayer()) {
         state.isPlaying = false;
+        emit('playStateChanged', false);
         updatePlayButton();
         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
 
@@ -621,6 +624,7 @@ function handleTimeUpdate() {
     if (domState.pipWindow && updateMiniPlayer) updateMiniPlayer();
 
     const player = getActivePlayer();
+    if (state.syncEnabled) sendTimeUpdate(player.currentTime);
     if (player.duration) {
         currentTime.textContent = formatTime(player.currentTime);
         duration.textContent = formatTime(player.duration);
@@ -1090,6 +1094,7 @@ export function removeFromQueue(index) {
         }
         updateQueueUI();
     }
+    emit('queueChanged');
 }
 
 // ========== QUEUE DRAG & DROP ==========
@@ -1146,6 +1151,7 @@ function initQueueDragDrop() {
             }
 
             updateQueueUI();
+            emit('queueChanged');
             showToast('Queue reordered');
         });
     });
@@ -1220,6 +1226,7 @@ repeatBtn.addEventListener('click', () => {
         repeatBtn.title = 'Repeat: Off';
         showToast('Repeat: Off');
     }
+    emit('repeatModeChanged', state.repeatMode);
 });
 
 // ========== KEYBOARD SHORTCUTS ==========
