@@ -48,7 +48,7 @@ export function connectSync(url) {
 
     _ws.onopen = () => {
         _reconnectAttempts = 0;
-        console.log('Sync: connected to', _serverUrl);
+        // Connected successfully
 
         // Broadcast request_full_sync
         sendMessage({ type: 'request_full_sync', source: getSyncDeviceName() });

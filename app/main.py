@@ -1778,6 +1778,10 @@ async def sync_websocket(websocket: WebSocket):
             data = json_module.loads(msg_text)
             await broadcast(data)
     except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
         async with sync_service._clients_lock:
             sync_service.clients.discard(websocket)
 
