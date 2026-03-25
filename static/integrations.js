@@ -336,6 +336,8 @@ async function uploadToDrive(syncType = 'all') {
             syncData.podcastHistory = state.podcastHistory;
             syncData.audiobookHistory = state.audiobookHistory;
             syncData.podcastTags = state.podcastTags;
+            syncData.moodHistory = state.moodHistory;
+            syncData.moodPreferences = state.moodPreferences;
         }
 
         if (syncType === 'all' || syncType === 'queue') {
@@ -474,6 +476,16 @@ async function downloadFromDrive(syncType = 'all') {
                 if (syncData.podcastTags) {
                     state.podcastTags = syncData.podcastTags;
                     savePodcastTags();
+                }
+
+                // Restore mood data (optional keys — skip if absent)
+                if (syncData.moodHistory) {
+                    state.moodHistory = syncData.moodHistory;
+                    localStorage.setItem('freedify_mood_history', JSON.stringify(state.moodHistory));
+                }
+                if (syncData.moodPreferences) {
+                    state.moodPreferences = syncData.moodPreferences;
+                    localStorage.setItem('freedify_mood_preferences', JSON.stringify(state.moodPreferences));
                 }
 
                 restoredCount = remotePlaylists.length;
