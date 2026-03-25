@@ -59,6 +59,10 @@ export function connectSync(url) {
 
     _ws.onmessage = (event) => {
         try {
+            if (typeof event.data === 'string' && event.data.length > 1_000_000) {
+                console.warn('Sync: message too large, ignoring');
+                return;
+            }
             const msg = JSON.parse(event.data);
             handleIncomingMessage(msg);
         } catch (e) {
