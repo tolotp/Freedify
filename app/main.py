@@ -12,7 +12,8 @@ from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Query, Response, Request
+import json as json_module
+from fastapi import FastAPI, HTTPException, Query, Response, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +49,7 @@ from app.listenbrainz_service import listenbrainz_service
 from app.jamendo_service import jamendo_service
 from app.genius_service import genius_service
 from app.concert_service import concert_service
+from app.sync_service import sync_service
 from app.audiobookbay_service import search_audiobooks, get_audiobook_details, is_audiobookbay_url, extract_slug_from_url
 from app.premiumize_service import create_transfer, check_transfer_status, list_folder_contents, search_my_files, delete_item
 
@@ -122,6 +124,9 @@ async def lifespan(app: FastAPI):
     # Periodically purge expired stream URL cache entries
     stream_cache_task = asyncio.create_task(_purge_expired_stream_urls())
 
+    # Start mDNS advertising for cross-device sync
+    await sync_service.start_advertising()
+
     yield
 
     # Cleanup on shutdown
@@ -135,6 +140,7 @@ async def lifespan(app: FastAPI):
     await podcast_service.close()
     import app.tidal_service as tidal_service
     await tidal_service.close()
+    await sync_service.stop_advertising()
     logger.info("Server shutdown complete.")
 
 
@@ -1722,6 +1728,65 @@ async def delete_premiumize_item(request: Request):
     except Exception as e:
         logger.error(f"Premiumize delete error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== CROSS-DEVICE SYNC ==========
+
+@app.websocket("/api/sync/ws")
+async def sync_websocket(websocket: WebSocket):
+    """WebSocket relay for cross-device queue sync."""
+    await websocket.accept()
+
+    # Read first message with size guard (1 MB max)
+    # NOTE: Frontend sends text frames (WebSocket.send(string)), so use receive_text()
+    # not receive_bytes(). Starlette's receive_bytes() rejects text frames.
+    try:
+        raw = await websocket.receive_text()
+    except WebSocketDisconnect:
+        return
+    if len(raw.encode('utf-8')) > 1_000_000:
+        await websocket.close(code=1009)
+        return
+
+    async with sync_service._clients_lock:
+        sync_service.clients.add(websocket)
+
+    async def broadcast(data: dict):
+        dead = set()
+        async with sync_service._clients_lock:
+            targets = set(sync_service.clients) - {websocket}
+        for client in targets:
+            try:
+                await client.send_json(data)
+            except Exception:
+                dead.add(client)
+        if dead:
+            async with sync_service._clients_lock:
+                sync_service.clients -= dead
+
+    try:
+        # Process first message
+        first_message = json_module.loads(raw)
+        await broadcast(first_message)
+
+        # Relay loop (with 1 MB size guard on all messages)
+        while True:
+            msg_text = await websocket.receive_text()
+            if len(msg_text.encode('utf-8')) > 1_000_000:
+                await websocket.close(code=1009)
+                break
+            data = json_module.loads(msg_text)
+            await broadcast(data)
+    except WebSocketDisconnect:
+        async with sync_service._clients_lock:
+            sync_service.clients.discard(websocket)
+
+
+@app.get("/api/sync/discover")
+async def discover_devices():
+    """Return Freedify instances found on local network via mDNS."""
+    devices = await sync_service.discover_devices(timeout=3.0)
+    return {"devices": devices}
 
 
 if __name__ == "__main__":
