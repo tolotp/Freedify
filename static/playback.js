@@ -506,8 +506,12 @@ export function playNext(forceAdvance) {
     const player = getActivePlayer();
 
     if (!forceAdvance && currentTrack && (currentTrack.source === 'podcast' || currentTrack.source === 'audiobook')) {
-        player.currentTime = Math.min(player.duration || 0, player.currentTime + 15);
-        return;
+        const remaining = (player.duration || 0) - player.currentTime;
+        if (remaining > 15) {
+            player.currentTime = player.currentTime + 15;
+            return;
+        }
+        // Less than 15s left — fall through to advance to next track
     }
 
     if (state.repeatMode === 'one') {
@@ -731,7 +735,7 @@ audioPlayer2.addEventListener('timeupdate', handleTimeUpdate);
 playBtn.addEventListener('click', togglePlay);
 prevBtn.addEventListener('click', playPrevious);
 if (miniPlayerBtn) miniPlayerBtn.addEventListener('click', () => emit('toggleMiniPlayer'));
-nextBtn.addEventListener('click', playNext);
+nextBtn.addEventListener('click', () => playNext());
 
 // Playback speed
 const playbackSpeedBtn = document.getElementById('playback-speed-btn');
@@ -844,7 +848,7 @@ if (fsPrevBtn) {
     fsPrevBtn.addEventListener('click', () => {
         const currentTrack = state.queue[state.currentIndex];
         const player = getActivePlayer();
-        if (currentTrack && currentTrack.source === 'podcast') {
+        if (currentTrack && (currentTrack.source === 'podcast' || currentTrack.source === 'audiobook')) {
             player.currentTime = Math.max(0, player.currentTime - 15);
         } else {
             prevBtn.click();
@@ -855,8 +859,13 @@ if (fsNextBtn) {
     fsNextBtn.addEventListener('click', () => {
         const currentTrack = state.queue[state.currentIndex];
         const player = getActivePlayer();
-        if (currentTrack && currentTrack.source === 'podcast') {
-            player.currentTime = Math.min(player.duration, player.currentTime + 15);
+        if (currentTrack && (currentTrack.source === 'podcast' || currentTrack.source === 'audiobook')) {
+            const remaining = (player.duration || 0) - player.currentTime;
+            if (remaining > 15) {
+                player.currentTime = player.currentTime + 15;
+            } else {
+                playNext(true);
+            }
         } else {
             nextBtn.click();
         }

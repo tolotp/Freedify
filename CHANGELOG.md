@@ -6,7 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.4] - 2026-03-27
+
+### Added
+- **Settings Modal** — Gear icon replaces all header buttons. Click the SVG gear to open a centralized modal with 6 sections: Connections (Spotify, Last.fm, Sync Devices), Cloud & Data (Google Drive, Export/Import All Data), Playback (DJ Mode), Local Files, Appearance (theme picker), and Support (Donate).
+- **SoundCloud Search** — New `soundcloud_service.py` uses yt-dlp's `scsearch:` prefix to search SoundCloud without an API key. Results play through the existing LINK: stream path. Accessible via More → SoundCloud.
+- **Playlists + Smart Playlist as Top-Level Pills** — Promoted out of the More dropdown to permanent pill buttons alongside Songs, Albums, Artists, Podcasts, and Audiobooks.
+- **Slimmed More Menu** — Reorganized to: YT Music → SoundCloud → For You → Setlists → Concert Search → Donate.
+
+### Fixed
+- **Last.fm "Unauthorized Token" error** — Three channels (postMessage, BroadcastChannel, window focus) were all calling `exchangeLastFMToken()` with the same single-use token. Added `safeExchangeLastFMToken()` guard to deduplicate — only the first call goes through. Last.fm button now also closes the settings modal so the auth popup isn't obscured.
+- **Google Drive sync modal behind settings modal** — Clicking Sync to Google Drive now closes the settings modal before opening the Drive modal.
+- **"In My Podcasts" button broken in episode view** — Two bugs: (1) stale DOM guard prevented re-creating the button when navigating between different podcasts; button now always removes and re-creates with a fresh closure. (2) `search.js` local `savePodcastFavorites` was writing to `freedify_podcast_favs` but `state.js` loads from `freedify_podcasts` — key mismatch silently lost saves on refresh.
+- **DJ Mode pulling audiobook tracks** — Added `ab_` prefix to the track filter in `fetchAudioFeaturesForTracks`, alongside existing filters for `pod_`, `LINK:`, and `local_` IDs.
+- **Spotify /audio-features 403 retry spam** — When the deprecated `/audio-features` endpoint returned 403, `_api_request` was retrying 3 times with token refreshes. Now bails immediately on 403 for that endpoint; the existing circuit breaker handles session-level disable.
+- **Removed duplicate `except` block** — `get_audio_features_batch` in `main.py` had an identical `except` clause twice.
+- **Album modal inaccurate format badge** — Removed the hardcoded "MP3 • 16bit / 44.1kHz" line which showed static defaults regardless of actual track quality.
+
+### Changed
+- **Gemini SDK migration** — Migrated `dj_service.py` and `ai_radio_service.py` from the deprecated `google-generativeai` package to the new `google-genai` (`googleapis/python-genai`). Updated `requirements.txt` to `google-genai>=1.0.0`. DJ Mode initializes without deprecation warnings.
+- **Album modal action pills** — Increased horizontal padding (`4px` → `12px`) so pills are compact but have proper breathing room.
+- **Shuffle button height** — Vertical padding reduced to match the Add All to Queue button.
+- **ai-menu-btn skip in type handler** — `search.js` now skips the AI modal button in the type-selector click handler since it has no `data-type` attribute (its own click handler in `integrations.js` manages it).
+- **`search-more-menu` close on import-playlist click** — Import Playlist button removed from Settings modal; it already lives as a dedicated button in the playlist detail view header.
+
+---
+
 ## [1.4.3] - 2026-03-25
+
 
 ### Added
 - **Mood-Aware Smart Playlists** — Smart Playlist and AI Radio now learn your taste per mood

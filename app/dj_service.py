@@ -50,17 +50,16 @@ class DJService:
         """Lazy initialization of Gemini client."""
         if self._genai is None:
             try:
-                import google.generativeai as genai
+                from google import genai
                 if not self.api_key:
                     logger.warning("GEMINI_API_KEY not set - AI features will use rule-based fallback")
                     return False
-                genai.configure(api_key=self.api_key)
-                self._genai = genai
-                self._model = genai.GenerativeModel('gemini-2.0-flash')
+                self._genai = genai.Client(api_key=self.api_key)
+                self._model = 'gemini-2.0-flash'
                 logger.info("Gemini 2.0 Flash initialized successfully")
                 return True
             except ImportError:
-                logger.warning("google-generativeai not installed - using rule-based fallback")
+                logger.warning("google-genai not installed - using rule-based fallback")
                 return False
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
@@ -244,7 +243,10 @@ Respond ONLY with valid JSON in this exact format:
 }}"""
 
         try:
-            response = await self._model.generate_content_async(prompt)
+            response = await self._genai.aio.models.generate_content(
+                model=self._model,
+                contents=prompt
+            )
             text = response.text.strip()
             
             # Extract JSON from response
@@ -297,8 +299,6 @@ Respond ONLY with valid JSON in this exact format:
             logger.error(f"AI generation error: {e}")
             return None
 
-
-            return None
     
     async def get_audio_features_ai(self, name: str, artist: str) -> Optional[Dict[str, Any]]:
         """
@@ -326,7 +326,10 @@ Respond ONLY with valid JSON:
 }}"""
 
         try:
-            response = await self._model.generate_content_async(prompt)
+            response = await self._genai.aio.models.generate_content(
+                model=self._model,
+                contents=prompt
+            )
             text = response.text.strip()
             
             # Extract JSON
@@ -384,7 +387,10 @@ Respond ONLY with valid JSON:
 
         try:
             import json
-            response = await self._model.generate_content_async(prompt)
+            response = await self._genai.aio.models.generate_content(
+                model=self._model,
+                contents=prompt
+            )
             text = response.text.strip()
             
             # Extract JSON

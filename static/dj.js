@@ -134,7 +134,7 @@ async function fetchAudioFeaturesForTracks(tracks) {
 
     // Filter out already cached AND local files (trust local metadata)
     const tracksToFetch = tracks
-        .filter(t => t.id && !t.id.startsWith('LINK:') && !t.id.startsWith('pod_') && !t.id.startsWith('local_'))
+        .filter(t => t.id && !t.id.startsWith('LINK:') && !t.id.startsWith('pod_') && !t.id.startsWith('ab_') && !t.id.startsWith('local_'))
         .filter(t => !state.audioFeaturesCache[t.id])
         .map(t => ({
             id: t.id,

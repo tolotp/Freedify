@@ -56,7 +56,7 @@ const allTypeBtns = document.querySelectorAll('.type-btn, .type-btn-menu');
 
 allTypeBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-        if (btn.id === 'search-more-btn') return; // Skip the toggle button itself
+        if (btn.id === 'search-more-btn' || btn.id === 'ai-menu-btn') return; // Skip toggle and AI modal buttons
 
         allTypeBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -818,7 +818,8 @@ function togglePodcastFavorite(podcast) {
 }
 
 function savePodcastFavorites() {
-    localStorage.setItem('freedify_podcast_favs', JSON.stringify(state.podcastFavorites));
+    // Use the same key as state.js loads from: 'freedify_podcasts'
+    localStorage.setItem('freedify_podcasts', JSON.stringify(state.podcastFavorites));
 }
 
 function addPodcastFavorite(podcast) {

@@ -47,6 +47,7 @@ import {
     renderRecommendations, initLocalFiles, initGoogleDriveSync,
     initSpotifyOAuth, initAIRadio, initAIAssistant, checkAndAddTracks,
     initSyncUI,
+    initDataExportImport,
 } from './integrations.js';
 import {
     initDJMode, fetchAudioFeaturesForTracks, renderDJBadgeForTrack,
@@ -368,5 +369,6 @@ initConcertAlerts();
 initAIRadio();
 initAIAssistant();
 initSpotifyOAuth();
+initDataExportImport();
 initSync();
 initSyncUI();

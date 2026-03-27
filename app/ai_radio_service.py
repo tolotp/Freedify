@@ -22,17 +22,16 @@ class AIRadioService:
         """Lazy initialization of Gemini client."""
         if self._genai is None:
             try:
-                import google.generativeai as genai
+                from google import genai
                 if not self.api_key:
                     logger.warning("GEMINI_API_KEY not set - AI Radio will use basic mode")
                     return False
-                genai.configure(api_key=self.api_key)
-                self._genai = genai
-                self._model = genai.GenerativeModel('gemini-2.0-flash')
+                self._genai = genai.Client(api_key=self.api_key)
+                self._model = 'gemini-2.0-flash'
                 logger.info("AI Radio: Gemini initialized")
                 return True
             except ImportError:
-                logger.warning("google-generativeai not installed")
+                logger.warning("google-genai not installed")
                 return False
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini for AI Radio: {e}")
@@ -137,7 +136,10 @@ Respond ONLY with valid JSON:
   "vibe_description": "Brief description of the vibe"
 }}"""
 
-        response = await self._model.generate_content_async(prompt)
+        response = await self._genai.aio.models.generate_content(
+            model=self._model,
+            contents=prompt
+        )
         text = response.text.strip()
         
         # Extract JSON
@@ -272,7 +274,10 @@ Respond ONLY with valid JSON:
   ]
 }}"""
 
-            response = await self._model.generate_content_async(prompt)
+            response = await self._genai.aio.models.generate_content(
+                model=self._model,
+                contents=prompt
+            )
             text = response.text.strip()
             
             # Extract JSON

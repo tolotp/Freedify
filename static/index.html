@@ -62,25 +62,74 @@
             <h1 class="logo"><span class="brand-text">Freedify</span></h1>
             <div class="header-actions">
                 <button id="hifi-btn" class="header-btn" title="HiFi Mode - Stream lossless FLAC (faster startup, more data)">HiFi</button>
-                <label for="file-input" class="header-btn" title="Add Local Songs (MP3/FLAC)" style="cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">📂</label>
-                <button id="dj-mode-btn" class="header-btn" title="DJ Mode">🎧</button>
-                <button id="sync-btn" class="header-btn" title="Sync with Google Drive">☁️</button>
-                <button id="theme-btn" class="theme-btn" title="Change Theme">🎨</button>
+                <button id="settings-btn" class="header-btn settings-btn" title="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </button>
             </div>
         </header>
-        
-        <!-- Theme Picker Dropdown -->
-        <div id="theme-picker" class="theme-picker hidden">
-            <div class="theme-option" data-theme="">🌙 Default</div>
-            <div class="theme-option" data-theme="theme-purple">💜 Purple</div>
-            <div class="theme-option" data-theme="theme-blue">💙 Blue</div>
-            <div class="theme-option" data-theme="theme-green">💚 Green</div>
-            <div class="theme-option" data-theme="theme-pink">💕 Pink</div>
-            <div class="theme-option" data-theme="theme-orange">🧡 Orange</div>
-            <div class="theme-option" data-theme="theme-dracula">🧛 Dracula</div>
-            <div class="theme-option" data-theme="theme-catppuccin">☕ Catppuccin</div>
-            <div class="theme-option" data-theme="theme-nightowl">🦉 Night Owl</div>
-            <div class="theme-option" data-theme="theme-nuclear">☢️ Nuclear</div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="settings-modal hidden">
+            <div class="settings-modal-content">
+                <div class="settings-modal-header">
+                    <h2>Settings</h2>
+                    <button id="settings-close" class="settings-close">×</button>
+                </div>
+                <div class="settings-modal-body">
+                    <!-- Connections -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Connections</h3>
+                        <button class="settings-item" id="spotify-connect-btn">Connect Spotify</button>
+                        <button class="settings-item" id="lastfm-menu-btn">Connect Last.fm</button>
+                        <button class="settings-item" id="sync-menu-btn">Sync Devices</button>
+                    </div>
+                    <!-- Cloud & Data -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Cloud & Data</h3>
+                        <button class="settings-item" id="sync-btn">Sync to Google Drive</button>
+
+                        <div class="settings-divider"></div>
+                        <button class="settings-item" id="export-all-data-btn">Export All Data</button>
+                        <button class="settings-item" id="import-all-data-btn">Import All Data</button>
+                        <input type="file" id="import-all-data-input" accept=".json" class="hidden">
+                    </div>
+                    <!-- Playback -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Playback</h3>
+                        <button class="settings-item" id="dj-mode-btn">DJ Mode</button>
+                    </div>
+                    <!-- Local Files -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Local Files</h3>
+                        <label for="file-input" class="settings-item" style="cursor: pointer;">Add Local Songs (MP3/FLAC)</label>
+                        <input type="file" id="file-input" accept="audio/*" multiple class="hidden">
+                    </div>
+                    <!-- Appearance -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Appearance</h3>
+                        <div id="theme-picker" class="settings-theme-grid">
+                            <div class="theme-option" data-theme="">🌙 Default</div>
+                            <div class="theme-option" data-theme="theme-purple">💜 Purple</div>
+                            <div class="theme-option" data-theme="theme-blue">💙 Blue</div>
+                            <div class="theme-option" data-theme="theme-green">💚 Green</div>
+                            <div class="theme-option" data-theme="theme-pink">💕 Pink</div>
+                            <div class="theme-option" data-theme="theme-orange">🧡 Orange</div>
+                            <div class="theme-option" data-theme="theme-dracula">🧛 Dracula</div>
+                            <div class="theme-option" data-theme="theme-catppuccin">☕ Catppuccin</div>
+                            <div class="theme-option" data-theme="theme-nightowl">🦉 Night Owl</div>
+                            <div class="theme-option" data-theme="theme-nuclear">☢️ Nuclear</div>
+                        </div>
+                    </div>
+                    <!-- Support -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Support</h3>
+                        <a href="https://pally.gg/p/freedify" target="_blank" rel="noopener noreferrer" class="settings-item" style="text-decoration: none; color: inherit;">Donate</a>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Search Section -->
@@ -104,23 +153,19 @@
                 <button class="type-btn" data-type="artist">Artists</button>
                 <button class="type-btn" data-type="podcast">Podcasts</button>
                 <button class="type-btn" data-type="audiobook">Audiobooks</button>
+                <button class="type-btn" data-type="favorites">Playlists</button>
+                <button class="type-btn" id="ai-menu-btn">Smart Playlist</button>
                 <button id="search-more-btn" class="type-btn more-btn">⋮ More</button>
             </div>
             
             <!-- Search More Menu -->
             <div id="search-more-menu" class="search-more-menu hidden">
-                <button class="menu-item" id="ai-menu-btn">Smart Playlist</button>
+                <button class="menu-item type-btn-menu" data-type="ytmusic">YT Music</button>
+                <button class="menu-item type-btn-menu" data-type="soundcloud">SoundCloud</button>
+                <button class="menu-item type-btn-menu" data-type="rec">For You</button>
+                <button class="menu-item type-btn-menu" data-type="setlist">Setlists</button>
                 <button class="menu-item" id="concert-search-menu-btn">Concert Search</button>
                 <div class="menu-divider"></div>
-                <button class="menu-item type-btn-menu" data-type="ytmusic">YT Music</button>
-                <button class="menu-item type-btn-menu" data-type="setlist">Setlists</button>
-                <button class="menu-item type-btn-menu" data-type="rec">For You</button>
-                <button class="menu-item type-btn-menu" data-type="favorites">Playlists</button>
-                <button class="menu-item" id="import-playlist-menu-btn">Import Playlist</button>
-                <div class="menu-divider"></div>
-                <button class="menu-item" id="lastfm-menu-btn">Connect Last.fm</button>
-                <button class="menu-item" id="spotify-connect-btn">Connect Spotify</button>
-                <button class="menu-item" id="sync-menu-btn">Sync Devices</button>
                 <a href="https://pally.gg/p/freedify" target="_blank" rel="noopener noreferrer" class="menu-item" style="text-decoration: none; color: inherit; display: block;">Donate</a>
             </div>
         </section>
@@ -299,10 +344,8 @@
                                 <button id="album-playlist-btn" class="album-action-btn">♡ Add to Playlist</button>
                             </div>
                             
-                            <!-- Quality Badge -->
-                            <div id="album-modal-quality" class="album-quality-badge">
-                                🎵 FLAC • 16bit / 44.1kHz
-                            </div>
+                            <!-- Quality Badge hidden — JS no longer populates this -->
+                            <div id="album-modal-quality" class="album-quality-badge hidden"></div>
                         </div>
                     </div>
                     

@@ -52,6 +52,7 @@ from app.concert_service import concert_service
 from app.sync_service import sync_service
 from app.audiobookbay_service import search_audiobooks, get_audiobook_details, is_audiobookbay_url, extract_slug_from_url
 from app.premiumize_service import create_transfer, check_transfer_status, list_folder_contents, search_my_files, delete_item
+from app.soundcloud_service import search_tracks as soundcloud_search_tracks
 
 from app.cache import cleanup_cache, periodic_cleanup, is_cached, get_cache_path
 
@@ -333,6 +334,11 @@ async def search(
         if type == "ytmusic":
             results = await ytmusic_service.search_tracks(q, limit=20, offset=offset)
             return {"results": results, "query": q, "type": "track", "source": "ytmusic", "offset": offset}
+        
+        # SoundCloud Search
+        if type == "soundcloud":
+            results = await soundcloud_search_tracks(q, limit=20)
+            return {"results": results, "query": q, "type": "track", "source": "soundcloud", "offset": offset}
         
         # Setlist.fm Search
         if type == "setlist":
@@ -1042,9 +1048,6 @@ async def get_audio_features_batch(request: AudioFeaturesBatchRequest):
             features.append(feat)
         
         return {"features": features}
-    except Exception as e:
-        logger.error(f"Batch audio features error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Batch audio features error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

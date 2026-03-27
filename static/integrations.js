@@ -339,6 +339,7 @@ async function uploadToDrive(syncType = 'all') {
             syncData.podcastTags = state.podcastTags;
             syncData.moodHistory = state.moodHistory;
             syncData.moodPreferences = state.moodPreferences;
+            syncData.watchedPlaylists = state.watchedPlaylists;
         }
 
         if (syncType === 'all' || syncType === 'queue') {
@@ -488,6 +489,10 @@ async function downloadFromDrive(syncType = 'all') {
                     state.moodPreferences = syncData.moodPreferences;
                     localStorage.setItem('freedify_mood_preferences', JSON.stringify(state.moodPreferences));
                 }
+                if (syncData.watchedPlaylists) {
+                    state.watchedPlaylists = syncData.watchedPlaylists;
+                    localStorage.setItem('freedify_watched', JSON.stringify(state.watchedPlaylists));
+                }
 
                 restoredCount = remotePlaylists.length;
                 // If favorites view is active, refresh it
@@ -562,6 +567,8 @@ async function showDriveModal() {
 
 // Open Modal
 syncBtn?.addEventListener('click', () => {
+    // Close settings modal first so Drive modal isn't obscured
+    document.getElementById('settings-modal')?.classList.add('hidden');
     showDriveModal();
 });
 
@@ -1264,8 +1271,9 @@ fetch('/api/listenbrainz/validate')
         }
 
         lfmBtn.addEventListener('click', () => {
-            // Close the More menu
+            // Close both the More menu and settings modal
             document.getElementById('search-more-menu')?.classList.add('hidden');
+            document.getElementById('settings-modal')?.classList.add('hidden');
 
             if (localStorage.getItem('lastfm_session_key')) {
                 // Already connected — show disconnect option
@@ -1292,17 +1300,26 @@ fetch('/api/listenbrainz/validate')
         });
     }
 
+    // Guard: only exchange a token once (tokens are single-use on Last.fm)
+    let _lastfmExchangedToken = null;
+
+    function safeExchangeLastFMToken(token) {
+        if (!token || token === _lastfmExchangedToken) return;
+        _lastfmExchangedToken = token;
+        exchangeLastFMToken(token);
+    }
+
     // Check for pending token (fallback from redirect)
     const pendingToken = localStorage.getItem('lastfm_pending_token');
     if (pendingToken) {
         localStorage.removeItem('lastfm_pending_token');
-        exchangeLastFMToken(pendingToken);
+        safeExchangeLastFMToken(pendingToken);
     }
 
     // Listen for postMessage from auth popup
     window.addEventListener('message', (event) => {
         if (event.data?.type === 'lastfm-auth' && event.data.token) {
-            exchangeLastFMToken(event.data.token);
+            safeExchangeLastFMToken(event.data.token);
         }
     });
 
@@ -1311,7 +1328,7 @@ fetch('/api/listenbrainz/validate')
         const bc = new BroadcastChannel('freedify_lastfm');
         bc.onmessage = (event) => {
             if (event.data?.type === 'lastfm-auth' && event.data.token) {
-                exchangeLastFMToken(event.data.token);
+                safeExchangeLastFMToken(event.data.token);
             }
         };
     } catch(e) {}
@@ -1321,7 +1338,7 @@ fetch('/api/listenbrainz/validate')
         const pt = localStorage.getItem('lastfm_pending_token');
         if (pt) {
             localStorage.removeItem('lastfm_pending_token');
-            exchangeLastFMToken(pt);
+            safeExchangeLastFMToken(pt);
         }
     });
 
@@ -2178,6 +2195,215 @@ function updateSyncIndicator(status) {
     }
 }
 
+// ========== FULL DATA EXPORT / IMPORT ==========
+
+function exportAllData() {
+    try {
+        const backup = {
+            _meta: {
+                app: 'Freedify',
+                version: 1,
+                exportedAt: new Date().toISOString()
+            },
+            // Core data (mirrors Drive sync)
+            playlists: state.playlists,
+            library: state.library,
+            history: state.history,
+            queue: state.queue,
+            currentIndex: state.currentIndex,
+            volume: state.volume,
+            // Podcast & audiobook data
+            podcastFavorites: state.podcastFavorites,
+            audiobookFavorites: state.audiobookFavorites,
+            podcastPlayedEpisodes: state.podcastPlayedEpisodes,
+            podcastResumePositions: state.podcastResumePositions,
+            podcastHistory: state.podcastHistory,
+            audiobookHistory: state.audiobookHistory,
+            podcastTags: state.podcastTags,
+            // Mood data
+            moodHistory: state.moodHistory,
+            moodPreferences: state.moodPreferences,
+            // Watched playlists
+            watchedPlaylists: state.watchedPlaylists,
+            // Settings
+            settings: {
+                theme: localStorage.getItem('freedify_theme') || '',
+                hiRes: localStorage.getItem('freedify_hires') || 'false',
+                hiResQuality: localStorage.getItem('freedify_hires_quality') || '6',
+                crossfade: localStorage.getItem('freedify_crossfade') || 'false',
+                lastfmUsername: localStorage.getItem('freedify_lastfm_user') || '',
+                eqSettings: localStorage.getItem('freedify_eq') || '',
+                googleClientId: localStorage.getItem('freedify_google_client_id') || ''
+            }
+        };
+
+        const json = JSON.stringify(backup, null, 2);
+        const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+
+        const date = new Date().toISOString().slice(0, 10);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `freedify_backup_${date}.json`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+
+        const counts = [
+            `${state.playlists.length} playlists`,
+            `${state.library.length} library tracks`,
+            `${state.history.length} history items`
+        ].join(', ');
+        showToast(`Exported: ${counts}`);
+    } catch (e) {
+        console.error('Export error:', e);
+        showToast('Failed to export data');
+    }
+}
+
+async function importAllData(file) {
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // Basic validation
+        if (!data || typeof data !== 'object') {
+            showToast('Invalid backup file');
+            return;
+        }
+
+        // Check for at least one expected key
+        const expectedKeys = ['playlists', 'library', 'history', 'podcastFavorites', 'audiobookFavorites'];
+        const hasAny = expectedKeys.some(k => data[k] !== undefined);
+        if (!hasAny) {
+            showToast('This file doesn\'t look like a Freedify backup');
+            return;
+        }
+
+        if (!confirm(`Import Freedify backup from ${data._meta?.exportedAt || 'unknown date'}?\n\nThis will REPLACE all your current data.`)) {
+            return;
+        }
+
+        showLoading('Importing data...');
+
+        // Restore core data
+        if (data.playlists) {
+            state.playlists = data.playlists;
+            savePlaylists();
+        }
+        if (data.library) {
+            state.library = data.library;
+            saveLibrary();
+        }
+        if (data.history) {
+            state.history = data.history;
+            saveHistory();
+        }
+        if (data.queue) {
+            state.queue = data.queue;
+            localStorage.setItem('freedify_queue', JSON.stringify(data.queue));
+        }
+        if (data.currentIndex !== undefined) {
+            state.currentIndex = data.currentIndex;
+        }
+        if (data.volume !== undefined) {
+            state.volume = data.volume;
+        }
+
+        // Podcast & audiobook data
+        if (data.podcastFavorites) {
+            state.podcastFavorites = data.podcastFavorites;
+            savePodcastFavorites();
+        }
+        if (data.audiobookFavorites) {
+            state.audiobookFavorites = data.audiobookFavorites;
+            saveAudiobookFavorites();
+        }
+        if (data.podcastPlayedEpisodes) {
+            state.podcastPlayedEpisodes = data.podcastPlayedEpisodes;
+            savePodcastPlayed();
+        }
+        if (data.podcastResumePositions) {
+            state.podcastResumePositions = data.podcastResumePositions;
+            savePodcastResumePositions();
+        }
+        if (data.podcastHistory) {
+            state.podcastHistory = data.podcastHistory;
+            savePodcastHistory();
+        }
+        if (data.audiobookHistory) {
+            state.audiobookHistory = data.audiobookHistory;
+            saveAudiobookHistory();
+        }
+        if (data.podcastTags) {
+            state.podcastTags = data.podcastTags;
+            savePodcastTags();
+        }
+
+        // Mood data
+        if (data.moodHistory) {
+            state.moodHistory = data.moodHistory;
+            localStorage.setItem('freedify_mood_history', JSON.stringify(data.moodHistory));
+        }
+        if (data.moodPreferences) {
+            state.moodPreferences = data.moodPreferences;
+            localStorage.setItem('freedify_mood_preferences', JSON.stringify(data.moodPreferences));
+        }
+
+        // Watched playlists
+        if (data.watchedPlaylists) {
+            state.watchedPlaylists = data.watchedPlaylists;
+            localStorage.setItem('freedify_watched', JSON.stringify(data.watchedPlaylists));
+        }
+
+        // Settings
+        if (data.settings) {
+            const s = data.settings;
+            if (s.theme) localStorage.setItem('freedify_theme', s.theme);
+            if (s.hiRes) localStorage.setItem('freedify_hires', s.hiRes);
+            if (s.hiResQuality) localStorage.setItem('freedify_hires_quality', s.hiResQuality);
+            if (s.crossfade) localStorage.setItem('freedify_crossfade', s.crossfade);
+            if (s.lastfmUsername) localStorage.setItem('freedify_lastfm_user', s.lastfmUsername);
+            if (s.eqSettings) localStorage.setItem('freedify_eq', s.eqSettings);
+            if (s.googleClientId) localStorage.setItem('freedify_google_client_id', s.googleClientId);
+        }
+
+        hideLoading();
+        showToast('Data imported successfully! Reloading...');
+        setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+        hideLoading();
+        console.error('Import error:', e);
+        showToast('Failed to import — invalid or corrupted file');
+    }
+}
+
+function initDataExportImport() {
+    const exportBtn = $('#export-all-data-btn');
+    const importBtn = $('#import-all-data-btn');
+    const importInput = $('#import-all-data-input');
+
+    exportBtn?.addEventListener('click', () => {
+        exportAllData();
+        // Close the More menu
+        $('#search-more-menu')?.classList.add('hidden');
+    });
+
+    importBtn?.addEventListener('click', () => {
+        importInput?.click();
+        $('#search-more-menu')?.classList.add('hidden');
+    });
+
+    importInput?.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) importAllData(file);
+        e.target.value = ''; // Reset
+    });
+}
+
 // ========== EXPORTS ==========
 export {
     updateMediaSession,
@@ -2192,5 +2418,6 @@ export {
     initSpotifyOAuth,
     initAIRadio,
     initAIAssistant,
-    checkAndAddTracks
+    checkAndAddTracks,
+    initDataExportImport
 };

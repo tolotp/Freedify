@@ -313,6 +313,9 @@ class SpotifyService:
             response = await self.client.get(f"{self.API_BASE}{endpoint}", headers=headers, params=params)
             
             if response.status_code in (401, 403):
+                # Don't retry the deprecated /audio-features endpoint — it always returns 403
+                if response.status_code == 403 and '/audio-features' in endpoint:
+                    response.raise_for_status()
                 if attempt < max_retries - 1:
                     logger.warning(f"Got {response.status_code}, refreshing Spotify token (attempt {attempt + 1}/{max_retries})...")
                     if response.status_code == 403 and token == self.user_access_token and not force_client_credentials:

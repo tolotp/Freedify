@@ -208,8 +208,39 @@ export function showLibraryView() {
     emit('showPlaylistDetail', libraryPlaylist);
 }
 
-// ========== THEME PICKER ==========
-const themeBtn = $('#theme-btn');
+// ========== SETTINGS MODAL ==========
+const settingsBtn = $('#settings-btn');
+const settingsModal = $('#settings-modal');
+const settingsClose = $('#settings-close');
+
+export function openSettingsModal() {
+    settingsModal?.classList.remove('hidden');
+}
+
+export function closeSettingsModal() {
+    settingsModal?.classList.add('hidden');
+}
+
+settingsBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openSettingsModal();
+});
+
+settingsClose?.addEventListener('click', closeSettingsModal);
+
+// Close on backdrop click
+settingsModal?.addEventListener('click', (e) => {
+    if (e.target === settingsModal) closeSettingsModal();
+});
+
+// Close on Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !settingsModal?.classList.contains('hidden')) {
+        closeSettingsModal();
+    }
+});
+
+// ========== THEME PICKER (inside Settings Modal) ==========
 const themePicker = $('#theme-picker');
 const themeOptions = $$('.theme-option');
 
@@ -234,11 +265,6 @@ const themeOptions = $$('.theme-option');
     }
 })();
 
-themeBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    themePicker.classList.toggle('hidden');
-});
-
 themeOptions.forEach(opt => {
     opt.addEventListener('click', () => {
         const newTheme = opt.dataset.theme;
@@ -254,8 +280,6 @@ themeOptions.forEach(opt => {
         themeOptions.forEach(o => o.classList.remove('active'));
         opt.classList.add('active');
 
-        themePicker.classList.add('hidden');
-
         showToast(`Theme changed to ${opt.textContent}`);
 
         const metaThemeColor = document.querySelector('meta[name="theme-color"]');
@@ -266,12 +290,6 @@ themeOptions.forEach(opt => {
             }, 50);
         }
     });
-});
-
-document.addEventListener('click', (e) => {
-    if (themePicker && !themePicker.contains(e.target) && e.target !== themeBtn) {
-        themePicker.classList.add('hidden');
-    }
 });
 
 // ========== HiFi MODE ==========

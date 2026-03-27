@@ -794,6 +794,11 @@ async function fetchGoodreadsData(title, author) {
 }
 
 // Tag editor modal
+function savePodcastFavorites() {
+    // Use the same key as state.js (freedify_podcasts) so saves persist across reloads
+    localStorage.setItem('freedify_podcasts', JSON.stringify(state.podcastFavorites));
+}
+
 function openPodcastTagEditor(podcastId) {
     const podcast = state.podcastFavorites.find(p => p.id === podcastId);
     if (!podcast) return;
@@ -872,20 +877,22 @@ async function openPodcastEpisodes(podcastId) {
 
         // After detail view renders, inject podcast-specific controls
         setTimeout(() => {
-            // Add favorite toggle button to detail header
-            const detailActions = document.querySelector('.detail-actions');
-            if (detailActions && !detailActions.querySelector('.podcast-detail-fav-btn')) {
-                const isFav = isPodcastFavorited(podcastId);
-                const favBtn = document.createElement('button');
-                favBtn.className = `detail-add-library-btn podcast-detail-fav-btn ${isFav ? 'saved' : ''}`;
-                favBtn.innerHTML = isFav ? '❤️ In My Podcasts' : '🤍 Save to My Podcasts';
-                favBtn.addEventListener('click', () => {
-                    const nowFav = togglePodcastFavorite(podcast);
-                    favBtn.innerHTML = nowFav ? '❤️ In My Podcasts' : '🤍 Save to My Podcasts';
-                    favBtn.classList.toggle('saved', nowFav);
-                });
-                detailActions.appendChild(favBtn);
-            }
+        // Add favorite toggle button to detail header
+        // Always remove old button first so we get a fresh handler bound to this podcast
+        const detailActions = document.querySelector('.detail-actions');
+        if (detailActions) {
+            detailActions.querySelector('.podcast-detail-fav-btn')?.remove();
+            const isFav = isPodcastFavorited(podcastId);
+            const favBtn = document.createElement('button');
+            favBtn.className = `detail-add-library-btn podcast-detail-fav-btn ${isFav ? 'saved' : ''}`;
+            favBtn.innerHTML = isFav ? '❤️ In My Podcasts' : '🤍 Save to My Podcasts';
+            favBtn.addEventListener('click', () => {
+                const nowFav = togglePodcastFavorite(podcast);
+                favBtn.innerHTML = nowFav ? '❤️ In My Podcasts' : '🤍 Save to My Podcasts';
+                favBtn.classList.toggle('saved', nowFav);
+            });
+            detailActions.appendChild(favBtn);
+        }
 
             // Add played/download buttons to each episode row
             const trackItems = document.querySelectorAll('#detail-tracks .track-item');
@@ -1167,11 +1174,7 @@ function showAlbumModal(album) {
         };
     }
 
-    // Quality badge
-    const format = album.format || (state.hifiMode ? 'FLAC' : 'MP3');
-    const bitDepth = album.audio_quality?.maximumBitDepth || 16;
-    const sampleRate = album.audio_quality?.maximumSamplingRate || 44.1;
-    $('#album-modal-quality').textContent = `🎵 ${format} • ${bitDepth}bit / ${sampleRate}kHz`;
+    // Quality badge removed — showed inaccurate static defaults
 
     // Render track list with selection checkboxes for batch download
     const tracksContainer = $('#album-modal-tracks');
