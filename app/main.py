@@ -1108,6 +1108,7 @@ class AIRadioRequest(BaseModel):
     count: int = 5
     mood_liked: Optional[List[str]] = None
     mood_disliked: Optional[List[str]] = None
+    taste_profile: Optional[List[str]] = None
 
 
 @app.post("/api/ai-radio/generate")
@@ -1124,6 +1125,7 @@ async def generate_ai_radio_recommendations(request: AIRadioRequest):
             count=request.count,
             mood_liked=request.mood_liked,
             mood_disliked=request.mood_disliked,
+            taste_profile=request.taste_profile,
         )
         return result
     except Exception as e:
@@ -1139,6 +1141,7 @@ class GeneratePlaylistRequest(BaseModel):
     mood: Optional[str] = None
     mood_liked: Optional[List[str]] = None
     mood_disliked: Optional[List[str]] = None
+    taste_profile: Optional[List[str]] = None
 
 @app.post("/api/ai/generate-playlist")
 async def ai_generate_playlist(request: GeneratePlaylistRequest):
@@ -1150,6 +1153,7 @@ async def ai_generate_playlist(request: GeneratePlaylistRequest):
             mood=request.mood,
             mood_liked=request.mood_liked,
             mood_disliked=request.mood_disliked,
+            taste_profile=request.taste_profile,
         )
         return result
     except Exception as e:

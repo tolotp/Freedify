@@ -109,9 +109,10 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 
 ### 🧠 AI & Smart Features - Needs Gemini API Key to work
 - **Smart Playlist Generator** - Create custom playlists instantly by describing a vibe, genre, or activity
+- **Taste-Aware Personalization** - Smart Playlists and AI Radio sample your starred library, playlists, and listening history to build a taste profile. Gemini uses this to personalize recommendations from day one — even before mood tracking data accumulates
 - **Mood-Aware Playlists** - Select a mood (Focus, Workout, Chill, Party, Late Night, Commute) or type your own — Smart Playlists and AI Radio learn your preferences over time
 - **Mood Tracking** - Tracks played >75% are "liked" and skipped tracks are "disliked" per mood, personalizing future recommendations
-- **Duration Picker** - Generate playlists from 30 minutes to 4 hours via dropdown selector
+- **Duration Picker** - Generate playlists from 30 minutes to 4 hours — track count scales automatically (1h ≈ 15 tracks, 2.5h ≈ 37 tracks, 4h ≈ 60 tracks)
 - **AI Radio** - Infinite queue recommendations based on your seed track and mood (prevents genre drift)
 - **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility) - accuracy undetermined
 - **Mix Analysis** - Learn how to mix compatible tracks by Key and BPM

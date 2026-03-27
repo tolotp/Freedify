@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.5] - 2026-03-28
+
+### Added
+- **Library-Aware Smart Playlists** — Smart Playlist and AI Radio now sample your existing music taste to personalize recommendations from day one — even before mood tracking data accumulates. A `collectTasteProfile()` function samples up to 40 deduplicated tracks from your starred library (15), playlists (15), and listening history (10), and injects them into the Gemini prompt as a taste baseline.
+
+### Fixed
+- **Smart Playlist track count scaling** — Playlists were always capped at 15 tracks regardless of the selected duration. A 4-hour playlist now generates ~60 tracks, 2.5 hours ~37 tracks. Maximum cap raised to 80.
+- **Chrome/Render stale UI** — Bumped service worker cache from `freedify-v9` to `freedify-v10` and refreshed `styles.css`/`app.js` cache-bust timestamps to force Chrome on Render to evict the old pre-settings-modal assets.
+
+---
+
 ## [1.4.4] - 2026-03-27
+
 
 ### Added
 - **Settings Modal** — Gear icon replaces all header buttons. Click the SVG gear to open a centralized modal with 6 sections: Connections (Spotify, Last.fm, Sync Devices), Cloud & Data (Google Drive, Export/Import All Data), Playback (DJ Mode), Local Files, Appearance (theme picker), and Support (Donate).

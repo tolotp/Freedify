@@ -46,6 +46,7 @@ class AIRadioService:
         count: int = 5,
         mood_liked: Optional[List[str]] = None,
         mood_disliked: Optional[List[str]] = None,
+        taste_profile: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Generate track recommendations for AI Radio.
@@ -55,6 +56,7 @@ class AIRadioService:
             mood: A mood/vibe description if no seed track
             current_queue: Current queue to avoid duplicates
             count: Number of recommendations to generate
+            taste_profile: List of 'Artist - Title' strings from the user's library
             
         Returns:
             Dict with search_terms to find recommended tracks
@@ -83,6 +85,14 @@ Key: {seed_track.get('camelot', 'Unknown')}"""
         if mood_disliked:
             disliked_str = ", ".join(mood_disliked[:5])
             context += f"\nAvoid tracks like: {disliked_str}"
+        
+        # Append taste profile from library/playlists/history
+        if taste_profile:
+            taste_str = "\n".join(f"- {t}" for t in taste_profile[:30])
+            context += f"""\n
+USER'S MUSIC TASTE (from their library and playlists):
+{taste_str}
+Use this to understand the listener's style and preferences. Lean toward music they would enjoy."""
         
         # Exclude current queue tracks
         exclude_list = []
@@ -210,6 +220,7 @@ Respond ONLY with valid JSON:
         mood: Optional[str] = None,
         mood_liked: Optional[List[str]] = None,
         mood_disliked: Optional[List[str]] = None,
+        taste_profile: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Generate a playlist from a natural language description.
@@ -221,6 +232,7 @@ Respond ONLY with valid JSON:
             mood: Current mood context (e.g. "Focus", "Workout", or free-form)
             mood_liked: Tracks the user enjoys in this mood
             mood_disliked: Tracks the user dislikes in this mood
+            taste_profile: List of 'Artist - Title' strings from the user's library
 
         Returns:
             Dict with tracks (artist + title pairs), playlist name, description
@@ -237,8 +249,8 @@ Respond ONLY with valid JSON:
         try:
             import json
             
-            # Estimate tracks based on duration (avg 3.5 min per track)
-            estimated_tracks = min(max(duration_mins // 4, 5), track_count)
+            # Estimate tracks based on duration (avg 4 min per track), cap at 80
+            estimated_tracks = min(max(duration_mins // 4, 5), 80)
             
             mood_context = ""
             if mood:
@@ -249,11 +261,20 @@ Respond ONLY with valid JSON:
             if mood_disliked:
                 disliked_str = ", ".join(mood_disliked[:5])
                 mood_context += f"\nAVOID TRACKS LIKE: {disliked_str}"
+            
+            # Add taste profile from library/playlists/history
+            taste_context = ""
+            if taste_profile:
+                taste_str = "\n".join(f"- {t}" for t in taste_profile[:30])
+                taste_context = f"""\n
+USER'S MUSIC TASTE (from their library and playlists):
+{taste_str}
+Use this to understand the listener's style and preferences. Lean toward music they would enjoy while still matching the requested vibe."""
 
             prompt = f"""You are a music curator. Create a playlist based on this description.
 
 DESCRIPTION: "{description}"
-TARGET DURATION: ~{duration_mins} minutes ({estimated_tracks} tracks){mood_context}
+TARGET DURATION: ~{duration_mins} minutes ({estimated_tracks} tracks){mood_context}{taste_context}
 
 TASK: Generate a cohesive playlist that matches the vibe and purpose.
 
@@ -273,6 +294,9 @@ Respond ONLY with valid JSON:
     ...
   ]
 }}"""
+
+            taste_count = len(taste_profile) if taste_profile else 0
+            logger.info(f"Generating playlist: '{description}', mood={mood}, taste_profile={taste_count} tracks")
 
             response = await self._genai.aio.models.generate_content(
                 model=self._model,

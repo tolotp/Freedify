@@ -968,6 +968,52 @@ function hideAIRadioStatus() {
     }
 }
 
+// ========== TASTE PROFILE COLLECTOR ==========
+// Samples tracks from library, playlists, and history to build a taste baseline
+// for Gemini to personalize Smart Playlists and AI Radio from day one.
+function collectTasteProfile() {
+    const seen = new Set();
+    const profile = [];
+
+    function addTrack(name, artists) {
+        if (!name || !artists) return;
+        const key = `${artists} - ${name}`.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        profile.push(`${artists} - ${name}`);
+    }
+
+    // 1. Library (starred tracks) — up to 15
+    if (state.library && state.library.length) {
+        const libSample = state.library.slice(0, 15);
+        libSample.forEach(t => addTrack(t.name, t.artists));
+    }
+
+    // 2. Playlists — up to 15 (round-robin across playlists)
+    if (state.playlists && state.playlists.length) {
+        let playlistCount = 0;
+        const maxPerPlaylist = Math.max(2, Math.floor(15 / state.playlists.length));
+        for (const pl of state.playlists) {
+            if (playlistCount >= 15) break;
+            const tracks = pl.tracks || [];
+            for (let i = 0; i < Math.min(tracks.length, maxPerPlaylist); i++) {
+                if (playlistCount >= 15) break;
+                addTrack(tracks[i].name, tracks[i].artists);
+                playlistCount++;
+            }
+        }
+    }
+
+    // 3. History (recently played) — up to 10
+    if (state.history && state.history.length) {
+        const histSample = state.history.slice(0, 10);
+        histSample.forEach(t => addTrack(t.name, t.artists));
+    }
+
+    console.log(`[TasteProfile] library=${state.library?.length || 0}, playlists=${state.playlists?.length || 0}, history=${state.history?.length || 0} → ${profile.length} taste tracks`);
+    return profile.length > 0 ? profile : undefined;
+}
+
 async function checkAndAddTracks() {
     if (!state.aiRadioActive || state.aiRadioFetching) return;
 
@@ -1004,6 +1050,7 @@ async function checkAndAddTracks() {
                 count: 5,
                 mood_liked: moodLiked.length ? moodLiked : undefined,
                 mood_disliked: moodDisliked.length ? moodDisliked : undefined,
+                taste_profile: collectTasteProfile(),
             };
 
 
@@ -1838,6 +1885,7 @@ function initAIAssistant() {
                         const disliked = prefs.disliked.slice(0, 5).map(t => `${t.name} - ${t.artist}`);
                         return disliked.length ? disliked : undefined;
                     })(),
+                    taste_profile: collectTasteProfile(),
                 })
             });
             const data = await res.json();
