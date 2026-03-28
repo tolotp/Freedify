@@ -121,20 +121,69 @@ def is_audiobookbay_url(text: str) -> bool:
 async def search_audiobooks(query: str, page: int = 1):
     """
     Search AudiobookBay for audiobooks.
-    Uses direct URL search (single page load) instead of form submission.
-    Supports pagination via the `page` parameter (1-indexed).
+    Uses Selenium form submission (ABB's ?s= URL param is unreliable and often
+    just shows the homepage). For page 1, we navigate to the homepage, type into
+    the search box, and submit the form. For subsequent pages, we use URL-based
+    pagination on the search results.
     """
     loop = asyncio.get_event_loop()
 
     def do_search(search_query: str, target_page: int):
-        encoded_query = urllib.parse.quote_plus(search_query)
-        # Direct URL search — single page load, no homepage visit needed
-        if target_page > 1:
-            url = f"{ABB_BASE_URL}/page/{target_page}/?s={encoded_query}"
-        else:
-            url = f"{ABB_BASE_URL}/?s={encoded_query}"
+        # ABB ignores the ?s= URL param entirely, so we MUST use form submission
+        # for ALL pages. For page > 1, we submit the form first, then navigate
+        # to the pagination URL within the same browser session (preserves cookies).
+        last_error = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            driver = None
+            try:
+                logger.info(f"ABB form search attempt {attempt}/{MAX_RETRIES}: '{search_query}' (page {target_page})")
+                driver = _create_driver()
+                driver.get(ABB_BASE_URL)
 
-        return _fetch_page_with_retry(url, wait_selector='div.post')
+                # Wait for search input to appear
+                search_input = WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="s"]'))
+                )
+
+                # Clear any existing text, type query, and submit
+                search_input.clear()
+                search_input.send_keys(search_query)
+                search_input.send_keys(u'\ue007')  # Press Enter (Keys.RETURN)
+
+                # Wait for search results to load
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.post'))
+                )
+
+                # If we need page > 1, navigate within the same session
+                # (cookies from form submission make the ?s= param work now)
+                if target_page > 1:
+                    encoded = urllib.parse.quote_plus(search_query)
+                    page_url = f"{ABB_BASE_URL}/page/{target_page}/?s={encoded}"
+                    logger.info(f"ABB navigating to page {target_page}: {page_url}")
+                    driver.get(page_url)
+
+                    # Wait for results on the new page
+                    try:
+                        WebDriverWait(driver, 15).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.post'))
+                        )
+                    except Exception:
+                        pass  # May have fewer/no results on later pages
+
+                logger.info(f"ABB search results loaded for: '{search_query}' (page {target_page})")
+                return driver.page_source
+            except Exception as e:
+                last_error = e
+                logger.warning(f"ABB form search attempt {attempt} failed: {e}")
+            finally:
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+
+        raise last_error or Exception("ABB search failed after all retries")
 
     try:
         html_content = await loop.run_in_executor(None, do_search, query, page)

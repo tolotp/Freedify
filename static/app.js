@@ -89,7 +89,14 @@ on('updateQueueUI', () => updateQueueUI());
 on('updatePlayerUI', () => updatePlayerUI());
 on('updatePlayButton', () => updatePlayButton());
 on('updateVolume', (vol) => updateVolume(vol));
-on('performSearch', (query) => performSearch(query));
+on('performSearch', (data) => {
+    // Support both string and { query, append } signatures
+    if (typeof data === 'string') {
+        performSearch(data);
+    } else if (data && data.query) {
+        performSearch(data.query, data.append);
+    }
+});
 on('showDetailView', (item, tracks) => {
     // Handle both (item, tracks) and ({ item, tracks }) signatures
     if (item && item.item && item.tracks) {

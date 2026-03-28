@@ -326,7 +326,10 @@ async def search(
                         "offset": 0
                     }
             # Normal keyword search with pagination
-            page = (offset // 15) + 1 if offset > 0 else 1
+            # ABB returns ~9-10 results per page — use 8 as divisor so page math works
+            abb_page_size = 8
+            page = (offset // abb_page_size) + 1 if offset > 0 else 1
+            logger.info(f"ABB search: query='{q}', offset={offset}, page={page}")
             results = await search_audiobooks(q, page=page)
             return {"results": results, "query": q, "type": "audiobook", "source": "audiobookbay", "offset": offset}
         

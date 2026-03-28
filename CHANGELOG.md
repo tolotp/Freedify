@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - **Smart Playlist track count scaling** — Playlists were always capped at 15 tracks regardless of the selected duration. A 4-hour playlist now generates ~60 tracks, 2.5 hours ~37 tracks. Maximum cap raised to 80.
+- **AudiobookBay search** — ABB silently ignores the `?s=` URL parameter, returning the homepage instead of search results. Switched to Selenium form submission (navigate to homepage → type query → submit) which reliably triggers ABB's WordPress search. Pagination (Load More) now submits the form first, then navigates to `/page/N/` within the same session (cookies make the URL param work).
+- **Load More audiobook results** — "Load More" was passing `{query, append}` as an object to `performSearch`, which received `[object Object]` as the search string. Fixed `app.js` event handler to destructure both string and object signatures. Also fixed page calculation: ABB returns ~9 results per page but the divisor was 15, so offset=9 always mapped to page 1.
 - **Chrome/Render stale UI** — Bumped service worker cache from `freedify-v9` to `freedify-v10` and refreshed `styles.css`/`app.js` cache-bust timestamps to force Chrome on Render to evict the old pre-settings-modal assets.
 
 ---
