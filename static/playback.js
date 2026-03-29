@@ -15,7 +15,7 @@ import {
     fsPrevBtn, fsNextBtn, searchInput, miniPlayerBtn, domState,
     volumeSlider, muteBtn, repeatBtn, queueBtn, queueSection,
     queueClose, queueClear, queueCount, queueContainer,
-    shortcutsHelp, shortcutsClose,
+    shortcutsHelp, shortcutsClose, queueSelectAll, queueSavePlaylistBtn,
 } from './dom.js';
 import {
     audio, getActivePlayer, getInactivePlayer,
@@ -954,6 +954,12 @@ queueClear.addEventListener('click', () => {
     updateQueueUI();
 });
 
+// Queue select-all
+queueSelectAll?.addEventListener('click', () => {
+    const cbs = queueContainer.querySelectorAll('.queue-select-cb');
+    cbs.forEach(cb => { cb.checked = queueSelectAll.checked; });
+});
+
 // Queue download
 $('#queue-download-btn')?.addEventListener('click', () => {
     if (state.queue.length === 0) return;
@@ -971,6 +977,29 @@ $('#queue-download-btn')?.addEventListener('click', () => {
     }
 
     emit('openDownloadModal', { tracks: selectedTracks, isBatch: true });
+});
+
+// Save queue as playlist
+queueSavePlaylistBtn?.addEventListener('click', () => {
+    if (state.queue.length === 0) {
+        showToast('Queue is empty');
+        return;
+    }
+
+    const checkedIndices = new Set();
+    queueContainer.querySelectorAll('.queue-select-cb:checked').forEach(cb => {
+        checkedIndices.add(parseInt(cb.dataset.index, 10));
+    });
+
+    const tracksToSave = checkedIndices.size > 0
+        ? state.queue.filter((_, i) => checkedIndices.has(i))
+        : state.queue;
+
+    if (window.openAddToPlaylistModal) {
+        window.openAddToPlaylistModal(tracksToSave);
+    } else {
+        showToast('Playlist feature unavailable');
+    }
 });
 
 // Queue item clicks (delegated)
@@ -1072,6 +1101,19 @@ export function updateQueueUI() {
 
     // Init drag & drop
     setTimeout(initQueueDragDrop, 0);
+
+    // Sync select-all checkbox state with individual checkboxes
+    if (queueSelectAll) {
+        const allCbs = queueContainer.querySelectorAll('.queue-select-cb');
+        allCbs.forEach(cb => {
+            cb.addEventListener('change', () => {
+                const total = allCbs.length;
+                const checked = queueContainer.querySelectorAll('.queue-select-cb:checked').length;
+                queueSelectAll.checked = checked === total;
+                queueSelectAll.indeterminate = checked > 0 && checked < total;
+            });
+        });
+    }
 }
 
 // ========== REMOVE FROM QUEUE ==========

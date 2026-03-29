@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.6] - 2026-03-29
+
+### Added
+- **Add Queue to Playlist** — A 🩷 button in the queue panel header saves the current queue as a playlist. If no track checkboxes are checked, the full queue is saved; if some are checked, only those tracks are saved. A "select all" checkbox in the header row lets users quickly check or uncheck every track at once.
+
+---
+
 ## [1.4.5] - 2026-03-28
 
 ### Added
