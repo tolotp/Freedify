@@ -506,6 +506,11 @@ export function togglePlay() {
             }
         });
     } else {
+        // Mark as intentionally paused BEFORE calling pause() so that
+        // handlePause's auto-resume guard and the watchdog both see
+        // state.isPlaying === false and don't override the user's action.
+        state.isPlaying = false;
+        updatePlayButton();
         player.pause();
     }
 }
@@ -632,11 +637,13 @@ function handlePause(e) {
         // If the track ended naturally, handleEnded will take care of advancing.
         // If the user didn't pause manually but the player stopped (e.g. Android
         // background throttling, network hiccup), try to resume after a short delay.
-        if (state.isPlaying && !player.ended && player.readyState >= 2) {
+        // Skip during track transitions — the old player fires a pause event that
+        // we should not try to recover from.
+        if (state.isPlaying && !player.ended && player.readyState >= 2 && !audio.transitionInProgress && !audio.loadInProgress) {
             // Likely a background interrupt — attempt auto-resume
             setTimeout(() => {
                 const p = getActivePlayer();
-                if (state.isPlaying && p.paused && !p.ended && p.readyState >= 2) {
+                if (state.isPlaying && p.paused && !p.ended && p.readyState >= 2 && !audio.transitionInProgress && !audio.loadInProgress) {
                     console.warn('Auto-resuming after unexpected pause');
                     p.play().catch(() => {});
                 }
@@ -774,6 +781,8 @@ function handlePlaying() {
 // (e.g. Android background throttling, frozen timers).
 setInterval(() => {
     if (!state.isPlaying) return;
+    // Don't interfere while a track is actively loading or transitioning
+    if (audio.loadInProgress || audio.transitionInProgress) return;
     const player = getActivePlayer();
     if (!player || !player.src) return;
 

@@ -47,6 +47,7 @@ if ('mediaSession' in navigator) {
             await getActivePlayer().play().catch(e => console.warn('MediaSession play failed:', e));
         }],
         ['pause', () => {
+            state.isPlaying = false;
             getActivePlayer().pause();
         }],
         ['previoustrack', () => {

@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `handleEnded` no longer returns early if `transitionInProgress` is stuck — always clears transition flags when a track naturally ends.
   - `handlePause` now detects background/system interrupts (Android throttling, network hiccups) vs. intentional user pauses and auto-resumes after 1.5 seconds.
   - Added a 5-second playback watchdog interval that catches paused-but-should-be-playing, lost audio source, and missed `ended` events.
+- **Pause Button Not Stopping Playback** — Fixed pause resuming after ~1.5 seconds. The `handlePause` auto-resume logic could not distinguish user-initiated pauses from background interrupts because `state.isPlaying` was still `true` when the pause event fired. `togglePlay()` and the MediaSession pause handler now set `state.isPlaying = false` before calling `player.pause()`, so the auto-resume guard and watchdog both respect intentional pauses.
+- **Lyrics / UI Showing Wrong Track** — Fixed lyrics modal (and other `currentIndex`-based UI) showing the next track instead of the currently playing one. The 5-second playback watchdog was firing during `loadTrack` (when `readyState` drops to 0 and the player is paused), interpreting it as a lost source and calling `playNext(true)` — silently advancing the index. Added `loadInProgress` and `transitionInProgress` guards to both the watchdog and the `handlePause` auto-resume path.
 - **Podcast Jump Back In** — Clicking a podcast or audiobook in the "Jump Back In" dashboard now correctly loads and resumes from the saved position, instead of failing to load due to the album-search logic that doesn't apply to podcasts.
 
 ### Added
